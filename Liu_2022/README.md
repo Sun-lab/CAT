@@ -1,5 +1,19 @@
 This folder contains code to process Liu_2022 study data.
 
+The data can be downloaded using wget:
+```
+wget -P . https://ftp.ncbi.nlm.nih.gov/geo/series/GSE179nnn/GSE179994/suppl/GSE179994_RAW.tar
+wget -P . https://ftp.ncbi.nlm.nih.gov/geo/series/GSE179nnn/GSE179994/suppl/GSE179994_PBMC.bulkTCR.tsv.gz
+wget -P . https://ftp.ncbi.nlm.nih.gov/geo/series/GSE179nnn/GSE179994/suppl/GSE179994_Tcell.metadata.tsv.gz
+wget -P . https://ftp.ncbi.nlm.nih.gov/geo/series/GSE179nnn/GSE179994/suppl/GSE179994_all.Tcell.rawCounts.rds.gz
+wget -P . https://ftp.ncbi.nlm.nih.gov/geo/series/GSE179nnn/GSE179994/suppl/GSE179994_all.scTCR.tsv.gz
+```
+
+### The convert_to_csv.R file will write the rds to csv file that we will later process using python.
+On Fred Hutch cluster, run this from the terminal:
+```
+Rscript convert_to_csv.R
+```
 ### The run.sh will run the python file ``process_all_data.py`` for ssGSEA enrichment on each sample and cell.
 On Fred Hutch cluster, run
 ```
