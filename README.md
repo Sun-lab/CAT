@@ -18,3 +18,12 @@ ml JupyterLab/4.0.3-GCCcore-12.2.0
 jupyter lab --ip=$(hostname) --port=$(fhfreeport) --no-browser
 ```
 Copy the links, open in browser and work from there.
+
+If any additional library is needed (for example scanpy), one can use this command to install into the user directory:
+```
+pip3 install --user scanpy
+```
+or search Fred Hutch python modules in terminal:
+```
+module avail xxx
+```
