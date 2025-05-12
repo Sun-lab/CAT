@@ -1,7 +1,17 @@
 # CAT
+
 Cancer Associated TCR
 
-To run on the Fred Hutch Cluster, first
+## Run it using local conda environment
+
+
+```
+conda create --name CAT python=3.10.8
+conda activate CAT
+conda install -c conda-forge pandas numpy scanpy anndata seaborn matplotlib
+conda install -c conda-forge python-igraph leidenalg
+```
+## To run on the Fred Hutch Cluster, first
 ```
 grabnode
 ```
@@ -27,3 +37,5 @@ or search Fred Hutch python modules in terminal:
 ```
 module avail xxx
 ```
+
+
