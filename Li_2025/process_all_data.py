@@ -19,6 +19,9 @@ with open("signatures_CD4.pkl", "rb") as f:
 
 print({k: len(v) for k, v in sigs_CD4.items()})
 
+del sigs_CD4['Jansen_TermDiff_73g']
+del sigs_CD8['Lowery_neg_99g']
+
 data_dir = "GSE288199_raw"
 
 sample_dirs = [d for d in os.listdir(data_dir)
@@ -92,13 +95,19 @@ def match_genes_in_sets(sigs_CD8, se2):
         gs[s1] = matched_genes
     return
 
-final_df = pd.DataFrame()
+predicted_cell_df = pd.read_csv("cell_type.csv", index_col=0)
+
+final_df_CD8 = pd.DataFrame()
+final_df_CD4 = pd.DataFrame()
 for s1 in sample_dirs:
     print(s1)
     adata = read_10x_custom(f'GSE288199_raw/{s1}')
 
-    sc.pp.normalize_total(adata, target_sum=1e4)
+    sc.pp.calculate_qc_metrics(adata, inplace=True)
+    median_depth = np.median(adata.obs['total_counts'].values)
+    sc.pp.normalize_total(adata, target_sum=median_depth)
     sc.pp.log1p(adata)  # log transform
+    
     new_index = [bc.rsplit('-', 1)[0] + f"-{s1}" for bc in adata.obs.index]
     adata.obs.index = new_index
 
@@ -113,13 +122,18 @@ for s1 in sample_dirs:
     # gseapy.ssgsea expects a DataFrame where rows = genes, columns = samples.
     # So let's invert adata back: adata.X => n_cells x n_genes
     # We need genes x cells. We'll build a small data frame:
+
+    mask_CD8 = adata.obs.join(predicted_cell_df)['cell_type_by_cluster']=='CD8'
+    mask_CD4 = adata.obs.join(predicted_cell_df)['cell_type_by_cluster']=='CD4'
+    adata_cd8 = adata[mask_CD8].copy()
+    adata_cd4 = adata[mask_CD4].copy()
     
     expr_for_ssgsea = pd.DataFrame(
-        adata.X.transpose().toarray(),
-        index=adata.var.index,   # Genes
-        columns=adata.obs.index
+    adata_cd8.X.transpose().toarray(),
+    index=adata_cd8.var.index,   # Genes
+    columns=adata_cd8.obs.index
     )
-    
+
     # gseapy ssgsea
     # Each gene set is a list of genes. We'll create the required format for gseapy.
     # gseapy requires: gene_sets = { 'set_name': [gene1, gene2, ... ], ... }
@@ -132,9 +146,7 @@ for s1 in sample_dirs:
     ssgsea_results = gp.ssgsea(data=expr_for_ssgsea,
                                gene_sets=ssgsea_sets,
                                sample_norm=False, # We already normalized above
-                               outdir=None,        # don't write to disk
-                               min_size=1,
-                               max_size=20000)
+                               outdir=None)
     ssgsea_results.run()
     ssgsea_scores = ssgsea_results.res2d # shape = #sets x #cells
     # Transpose to cell x set
@@ -145,17 +157,16 @@ for s1 in sample_dirs:
     )
     # rename columns
     df_wide.columns = [f"CD8{col}" for col in df_wide.columns]
+
     # ----------------------------------------------------------------
     # Compute average expression for certain sets
     # ----------------------------------------------------------------
     # We'll get the log-transformed data from adata.X: (n_cells, n_genes)
     # We'll define a small helper to average genes from 'gs'
     
-    adata_df = pd.DataFrame(adata.X.toarray(), 
-                            index=adata.obs_names, 
-                            columns=adata.var_names)
-    
-    
+    adata_df = pd.DataFrame(adata_cd8.X.toarray(), 
+                            index=adata_cd8.obs_names, 
+                            columns=adata_cd8.var_names)
     
     ave_Hanada_pos_27g = average_genes(sigs_CD8["Hanada_pos_27g"], adata_df)
     ave_Hanada_neg_5g  = average_genes(sigs_CD8["Hanada_neg_5g"],  adata_df)
@@ -164,19 +175,22 @@ for s1 in sample_dirs:
     # Now combine them with ssgsea_scores
     # The original code merges them in a single data.frame
     # We'll do the same:
-    signature_df = pd.DataFrame(index=adata.obs.index)
-    signature_df["CD8_ave_Hanada_pos_27g"] = ave_Hanada_pos_27g.values
-    signature_df["CD8_ave_Hanada_neg_5g"]  = ave_Hanada_neg_5g.values
-    signature_df["CD8_ave_Oliveira_virus_26g"] = ave_Oliveira_virus_26g.values
-
+    signature_df = pd.DataFrame(index=adata_cd8.obs.index)
+    signature_df["ave_Hanada_pos_27g"] = ave_Hanada_pos_27g.values
+    signature_df["ave_Hanada_neg_5g"]  = ave_Hanada_neg_5g.values
+    signature_df["ave_Oliveira_virus_26g"] = ave_Oliveira_virus_26g.values
+    
     df_combined = df_wide.join(signature_df, how="inner")
 
-    ssgsea_results_CD4 = gp.ssgsea(data=expr_for_ssgsea,
+    expr_for_ssgsea_cd4 = pd.DataFrame(
+        adata_cd4.X.transpose().toarray(),
+        index=adata_cd4.var.index,   # Genes
+        columns=adata_cd4.obs.index
+    )
+    ssgsea_results_CD4 = gp.ssgsea(data=expr_for_ssgsea_cd4,
                                gene_sets=ssgsea_sets_CD4,
                                sample_norm=False, # We already normalized above
-                               outdir=None,        # don't write to disk
-                               min_size=1,
-                               max_size=20000)
+                               outdir=None)
     ssgsea_results_CD4.run()
     ssgsea_scores_CD4 = ssgsea_results_CD4.res2d # shape = #sets x #cells
     # Transpose to cell x set
@@ -187,22 +201,28 @@ for s1 in sample_dirs:
     )
     # rename columns 
     df_wide_CD4.columns = [f"CD4{col}" for col in df_wide_CD4.columns]
+    
+    adata_df_cd4 = pd.DataFrame(adata_cd4.X.toarray(), 
+                            index=adata_cd4.obs_names, 
+                            columns=adata_cd4.var_names)
     # ----------------------------------------------------------------
     # Compute average expression for certain sets
     # ----------------------------------------------------------------    
-
-    ave_Hanada_pos_9g = average_genes(sigs_CD4["Hanada_pos_9g"], adata_df)
-    ave_Hanada_neg_4g = average_genes(sigs_CD4["Hanada_neg_4g"], adata_df)
+    
+    ave_Hanada_pos_9g = average_genes(sigs_CD4["Hanada_pos_9g"], adata_df_cd4)
+    ave_Lowery_neg_37g  = average_genes(sigs_CD4["Lowery_neg_37g"],  adata_df_cd4)
+    ave_Hanada_neg_4g = average_genes(sigs_CD4["Hanada_neg_4g"], adata_df_cd4)
     
     # Now combine them with ssgsea_scores
     # The original code merges them in a single data.frame
     # We'll do the same:
-    signature_df_CD4 = pd.DataFrame(index=adata.obs.index)
-    signature_df_CD4["CD4_Hanada_pos_9g"] = ave_Hanada_pos_9g.values
-    signature_df_CD4["CD4_Hanada_neg_4g"] = ave_Hanada_neg_4g.values
-
+    signature_df_CD4 = pd.DataFrame(index=adata_cd4.obs.index)
+    signature_df_CD4["Hanada_pos_9g"] = ave_Hanada_pos_9g.values
+    signature_df_CD4["Lowery_neg_37g"]  = ave_Lowery_neg_37g.values
+    signature_df_CD4["Hanada_neg_4g"] = ave_Hanada_neg_4g.values
+    
     df_combined_CD4 = df_wide_CD4.join(signature_df_CD4, how="inner")
-    df_CD4_CD8 = df_combined.join(df_combined_CD4, how="inner")
-    final_df = pd.concat([final_df, df_CD4_CD8], ignore_index=False)
-
-final_df.to_csv('output.csv',index = True)
+    final_df_CD8 = pd.concat([final_df_CD8, df_combined], ignore_index=False)
+    final_df_CD4 = pd.concat([final_df_CD4, df_combined_CD4], ignore_index=False)
+final_df_CD4.to_csv('output_CD4.csv',index = True)
+final_df_CD8.to_csv('output_CD8.csv',index = True)
