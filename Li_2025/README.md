@@ -50,18 +50,18 @@ with open("signatures_CD4.pkl", "wb") as f:
    pickle.dump(sigs_CD8, f)
 ```
 
-### First step, the run.sh will run the python file ``process_all_data.py`` for ssGSEA enrichment on each sample and cell.
+### First step, we run ``predict_cell_types.ipynb`` notebook, this will cluster cells and predict CD4/CD8 cell for each cell.
+The output is written to ``cell_type.csv``.
+
+### Then the run.sh will run the python file ``process_all_data.py`` for ssGSEA enrichment on each sample and cell.
 On Fred Hutch cluster, run
 ```
 sbatch run.sh
 ```
-The output will be written in output.csv.
-
-### The we run ``predict_cell_types.ipynb`` notebook, this will cluster cells and predict CD4/CD8 cell for each cell. 
-The output is written to ``cell_type.csv``.
+The output will be written in output_CD4/CD8.csv.
 
 ### Based on the cell types, we will run ``clustering.ipynb``, this will generate clusters for CD4/CD8 using the gene signature sets. 
 The cluster result will be written to ``CD4_CD8_clusters.csv``.
 
 ### Finally, the ``select_cancer_reactive_cells_CD4_CD8.ipynb``will select cancer reactive cells and visualize the data. 
-The final output is saved in ``cell_meta_data.csv``.
+The final output is saved in ``cell_meta_data_CD4/CD8.csv``. CD8 data is usually more reliable.
