@@ -45,6 +45,9 @@ with open("signatures_CD4.pkl", "rb") as f:
 
 print({k: len(v) for k, v in sigs_CD4.items()})
 
+del sigs_CD4['Jansen_TermDiff_73g']
+del sigs_CD8['Lowery_neg_99g']
+
 metadata = pd.read_csv("GSE236581_CRC-ICB_metadata.txt.gz", compression='gzip', sep=' ')
 
 
@@ -76,8 +79,9 @@ def match_genes_in_sets(sigs_CD8, se2):
     return
 
 import gseapy as gp
-final_df = pd.DataFrame()
-t_cell_types = [
+final_df_CD8 = pd.DataFrame()
+final_df_CD4 = pd.DataFrame()
+t_cell = {"CD4":[
  'c01_CD4_Tn_CCR7',
  'c02_CD4_Tn_SELL',
  'c03_CD4_Tn_NR4A2',
@@ -91,7 +95,7 @@ t_cell_types = [
  'c11_CD4_Treg_FOXP3',
  'c12_CD4_Treg_KLRB1',
  'c13_CD4_Treg_TNFRSF9',
- 'c14_CD4_MT',
+ 'c14_CD4_MT'], 'CD8':[
  'c15_CD8_Tn_CCR7',
  'c16_CD8_Tn_SELL',
  'c17_CD8_Tcm_GPR183',
@@ -106,21 +110,28 @@ t_cell_types = [
  'c26_CD8_MAIT_KLRB1',
  'c27_CD8_MAIT_SLC4A10',
  'c28_CD8_IEL_CD160',
-]
+]}
+sc.pp.calculate_qc_metrics(adata, inplace=True)
 adata.obs = adata.obs.join(metadata)
-adata_all = adata[adata.obs["SubCellType"].isin(t_cell_types)]
-sc.pp.normalize_total(adata_all, target_sum=1e4)
-sc.pp.log1p(adata_all)
 
-for lib in t_cell_types:
+adata_all_CD4 = adata[adata.obs["SubCellType"].isin(t_cell['CD4'])]
+adata_all_CD8 = adata[adata.obs["SubCellType"].isin(t_cell['CD8'])]
+
+median_depth = np.median(adata_all_CD4.obs['total_counts'].values)
+sc.pp.normalize_total(adata_all_CD4, target_sum=median_depth)
+sc.pp.log1p(adata_all_CD4)  # log transform
+
+median_depth = np.median(adata_all_CD8.obs['total_counts'].values)
+sc.pp.normalize_total(adata_all_CD8, target_sum=median_depth)
+sc.pp.log1p(adata_all_CD8)  # log transform
+
+for lib in t_cell['CD8']:
     print(lib)
-    adata = adata_all[adata_all.obs["SubCellType"]==lib]
+    adata = adata_all_CD8[adata_all_CD8.obs["SubCellType"]==lib]
     print(adata)
     sets_ave = ["Hanada_pos_27g", "Oliveira_virus_26g", "Hanada_neg_5g"]
-    sets_ave_CD4 = ["Hanada_pos_9g", "Hanada_neg_4g"]
     # Identify the rest for ssGSEA
     ssgsea_sets = {k: v for k, v in sigs_CD8.items() if k not in sets_ave}
-    ssgsea_sets_CD4 = {k: v for k, v in sigs_CD4.items() if k not in sets_ave}
     # gseapy.ssgsea expects a DataFrame where rows = genes, columns = samples.
     # So let's invert adata back: adata.X => n_cells x n_genes
     # We need genes x cells. We'll build a small data frame:
@@ -169,40 +180,60 @@ for lib in t_cell_types:
     signature_df["ave_Oliveira_virus_26g"] = ave_Oliveira_virus_26g.values
 
     df_combined = df_wide.join(signature_df, how="inner")
-
-    ssgsea_results_CD4 = gp.ssgsea(data=expr_for_ssgsea,
-                               gene_sets=ssgsea_sets_CD4,
-                               sample_norm=False, # We already normalized above
-                               outdir=None,        # don't write to disk
-                               min_size=1,
-                               max_size=20000)
-    ssgsea_results_CD4.run()
-    ssgsea_scores_CD4 = ssgsea_results_CD4.res2d # shape = #sets x #cells
+    final_df_CD8 = pd.concat([final_df_CD8, df_combined], ignore_index=False)
+for lib in t_cell['CD4']:
+    print(lib)
+    adata = adata_all_CD4[adata_all_CD4.obs["SubCellType"]==lib]
+    print(adata)
+    sets_ave_CD4 = ["Hanada_pos_9g", "Hanada_neg_4g"]
+    # Identify the rest for ssGSEA
+    ssgsea_sets = {k: v for k, v in sigs_CD4.items() if k not in sets_ave_CD4}
+    # gseapy.ssgsea expects a DataFrame where rows = genes, columns = samples.
+    # So let's invert adata back: adata.X => n_cells x n_genes
+    # We need genes x cells. We'll build a small data frame:
+    
+    expr_for_ssgsea = pd.DataFrame(
+        adata.X.transpose().toarray(),
+        index=adata.var['gene_name'].tolist(),   # Genes
+        columns=adata.obs.index
+    )
+    ssgsea_results = gp.ssgsea(data=expr_for_ssgsea,
+                                   gene_sets=ssgsea_sets,
+                                   sample_norm=False, # We already normalized above
+                                   outdir=None,        # don't write to disk
+                                   min_size=1,
+                                   max_size=20000)
+    ssgsea_results.run()
+    ssgsea_scores = ssgsea_results.res2d # shape = #sets x #cells
     # Transpose to cell x set
-    df_wide_CD4 = ssgsea_scores_CD4.pivot(
+    df_wide = ssgsea_scores.pivot(
         index='Name',    # Each sample’s name/ID
         columns='Term',  # The gene set name
         values='NES'      # Which score you want to spread out as columns
     )
-    # rename columns 
-    df_wide_CD4.columns = [f"CD4{col}" for col in df_wide_CD4.columns]
+    # rename columns
+    df_wide.columns = [f"CD4{col}" for col in df_wide.columns]
     # ----------------------------------------------------------------
     # Compute average expression for certain sets
-    # ----------------------------------------------------------------    
-
+    # ----------------------------------------------------------------
+    # We'll get the log-transformed data from adata.X: (n_cells, n_genes)
+    # We'll define a small helper to average genes from 'gs'
+    
+    adata_df = pd.DataFrame(adata.X.toarray(), 
+                            index=adata.obs_names, 
+                            columns=adata.var['gene_name'].tolist())
+    
     ave_Hanada_pos_9g = average_genes(sigs_CD4["Hanada_pos_9g"], adata_df)
     ave_Hanada_neg_4g = average_genes(sigs_CD4["Hanada_neg_4g"], adata_df)
         
     # Now combine them with ssgsea_scores
     # The original code merges them in a single data.frame
     # We'll do the same:
-    signature_df_CD4 = pd.DataFrame(index=adata.obs.index)
-    signature_df_CD4["Hanada_pos_9g"] = ave_Hanada_pos_9g.values
-    signature_df_CD4["Hanada_neg_4g"] = ave_Hanada_neg_4g.values
+    signature_df = pd.DataFrame(index=adata.obs.index)
+    signature_df["Hanada_pos_9g"] = ave_Hanada_pos_9g.values
+    signature_df["Hanada_neg_4g"] = ave_Hanada_neg_4g.values
 
-    df_combined_CD4 = df_wide_CD4.join(signature_df_CD4, how="inner")
-    df_CD4_CD8 = df_combined.join(df_combined_CD4, how="inner")
-
-    final_df = pd.concat([final_df, df_CD4_CD8], ignore_index=False)
-
-final_df.to_csv('cell_scores.csv',index = True)
+    df_combined = df_wide.join(signature_df, how="inner")
+    final_df_CD4 = pd.concat([final_df_CD4, df_combined], ignore_index=False)
+final_df_CD4.to_csv('output_CD4.csv',index = True)
+final_df_CD8.to_csv('output_CD8.csv',index = True)
