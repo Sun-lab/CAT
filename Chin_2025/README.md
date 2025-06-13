@@ -10,4 +10,4 @@ sbatch run.sh
 ```
 The output will be written in a csv file with each cell and TCR info (if any) for each cell.
 
-### Finally, the ``process_output.ipynb`` will perform analysis, write TCR meta data csv, clustering, select cancer reactive cells and visualize the data. 
+### Finally, the ``process_output_new.ipynb`` will perform analysis, write TCR meta data csv, clustering, select cancer reactive cells. Visualizations are available in the ``visualization.ipynb`` notebook with sample information.
