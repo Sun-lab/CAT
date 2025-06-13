@@ -2,6 +2,14 @@
 
 Cancer Associated TCR
 
+# Output files of the pipelines:
+
+**cell_meta_data_CD4.csv, cell_meta_data_CD8.csv**: contains scores for each cell, basic cell information, whether a cell is cancer reactive or not, TCR (could have multiple) associated with the cell. These files can be multi-indexed if TCR info is available for each cell.
+
+**cell_meta_data_CD4_cleaned.csv, cell_meta_data_CD4_cleaned.csv**: contains scores for each cell, basic cell information, whether a cell is cancer reactive or not, and one alpha chain and one beta chain from the TCR data (not multi-indexed). If more than 1 alpha/beta chain available for a single cell, we only take the one with highest UMI.
+
+**tcr_meta_data_CD4_cells.csv, tcr_meta_data_CD4_cells.csv**: TCR data for alpha and beta chains including v gene, j gene, cdr3, and cell level information (average score, num_cells have this TCR, num_cancer_reactive_cells have this TCR).
+
 ## Run it using local conda environment
 
 
