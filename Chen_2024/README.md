@@ -5,6 +5,8 @@ On Fred Hutch cluster, run
 ```
 sbatch run.sh
 ```
-The output will be written in a score csv file for each cell.
+The output will be written in score csv files for each cell.
 
-### Then, the ``process_output.ipynb`` will perform analysis, write TCR meta data csv, clustering, select cancer reactive cells and visualize the data. 
+### Then, the ``process_output.ipynb`` will perform analysis, write TCR meta data csv, clustering, select cancer reactive cells and visualize the data. ``visualizations.ipynb`` provides visualizations with sample level information. 
+
+(optionally) ``cancer_reactive_metrics_compare.ipynb`` compares cancer reactive definitions using cluster+cell score versus cluster only.
