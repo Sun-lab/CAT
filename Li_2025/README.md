@@ -64,4 +64,4 @@ The output will be written in output_CD4/CD8.csv.
 The cluster result will be written to ``CD4_CD8_clusters.csv``.
 
 ### Finally, the ``select_cancer_reactive_cells (with visualization).ipynb``will select cancer reactive cells and visualize the data. 
-The final output is saved in ``cell_meta_data_CD4/CD8.csv``. CD8 data is usually more reliable.
+The final output is saved. CD8 data is usually more reliable.
