@@ -138,7 +138,7 @@ for i in l:
     print(adata)
     sets_ave_CD4 = ["Hanada_pos_9g", "Hanada_neg_4g"]
     # Identify the rest for ssGSEA
-    ssgsea_sets = {k: v for k, v in sigs_CD4.items() if k not in sets_ave}
+    ssgsea_sets = {k: v for k, v in sigs_CD4.items() if k not in sets_ave_CD4}
     # gseapy.ssgsea expects a DataFrame where rows = genes, columns = samples.
     # So let's invert adata back: adata.X => n_cells x n_genes
     # We need genes x cells. We'll build a small data frame:
