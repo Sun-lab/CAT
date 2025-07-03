@@ -1,4 +1,9 @@
-This folder contains code to process Zheng_2021 study data at: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE156728
+This folder contains code to process Chow_2023 study data at: [https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE156728
+](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE212217)
+
+We will process the raw data directly from GSE212217_RAW.tar. 
+
+First, ``merge_raw_scRNA_to_h5ad.ipynb`` and ``merge_raw_tcr_data.ipynb`` will process the raw files and concat to h5ad and csv files.
 
 ### The run.sh will run the python file ``process_all_data.py`` for ssGSEA enrichment on each sample and cell.
 On Fred Hutch cluster, run
