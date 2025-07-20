@@ -4,7 +4,16 @@ import pandas as pd
 import scanpy as sc
 import matplotlib.pyplot as plt
 import numpy as np
-DATA_DIR = ""
+
+# set target read depth for normalization
+target_rd = 3000
+
+# Define thresholds for filtering
+min_rd = 500
+max_rd = 20000
+
+
+DATA_DIR = "GSE156728"
 
 def read_table(path, **kwargs):
     """Convenience for gzipped TSV with rownames in col 0."""
@@ -12,6 +21,8 @@ def read_table(path, **kwargs):
 pd.set_option('display.max_columns', None)
 meta_fp = os.path.join(DATA_DIR, "GSE156728_metadata.txt.gz")
 meta = read_table(meta_fp)
+meta.shape
+meta.head()
 
 import pickle
 
@@ -64,7 +75,9 @@ for i in l:
     df_path = glob.glob(os.path.join(DATA_DIR, f"*{i}_10X.CD8.counts.txt.gz"))[0]
     df = read_table(df_path)
     adata = sc.AnnData(df.T)
-    print(adata)
+    # Check whether adata.obs.index is a subset of meta['cellID']
+    assert(set(adata.obs.index).issubset(set(meta.index)))
+    
     sc.pp.calculate_qc_metrics(adata, inplace=True)
     adata.obs = adata.obs.join(meta)
     
@@ -72,10 +85,28 @@ for i in l:
     adata.obs.index = new_index
     
     median_depth = np.median(adata.obs['total_counts'].values)
-    sc.pp.normalize_total(adata, target_sum=median_depth)
+    print(f"Median depth for {i}: {median_depth}")
+
+    print("Min and max of total_counts for adata:", 
+        np.min(adata.obs['total_counts'].values), 
+        np.max(adata.obs['total_counts'].values))
+
+    # Check percentage of cells with counts < min_rd or > max_rd
+    low_count = (adata.obs['total_counts'] < min_rd).sum()
+    high_count = (adata.obs['total_counts'] > max_rd).sum()
+    total_cells = adata.shape[0]
+    print(f"Percentage of cells with counts < {min_rd}: {100 * low_count / total_cells:.2f}%")
+    print(f"Percentage of cells with counts > {max_rd}: {100 * high_count / total_cells:.2f}%")
+
+    # Filter cells with total_counts < min_rd or > max_rd
+    adata = adata[(adata.obs['total_counts'] >= min_rd) & (adata.obs['total_counts'] <= max_rd)]
+
+    sc.pp.normalize_total(adata, target_sum=target_rd)
     sc.pp.log1p(adata)  # log transform
+
     print(adata)
     sets_ave = ["Hanada_pos_27g", "Oliveira_virus_26g", "Hanada_neg_5g"]
+
     # Identify the rest for ssGSEA
     ssgsea_sets = {k: v for k, v in sigs_CD8.items() if k not in sets_ave}
     # gseapy.ssgsea expects a DataFrame where rows = genes, columns = samples.
@@ -102,7 +133,7 @@ for i in l:
         values='NES'      # Which score you want to spread out as columns
     )
     # rename columns
-    df_wide.columns = [f"CD8{col}" for col in df_wide.columns]
+    df_wide.columns = [f"CD8_{col}" for col in df_wide.columns]
     adata_df = pd.DataFrame(adata.X, 
                             index=adata.obs_names, 
                             columns=adata.var.index.tolist())
@@ -115,17 +146,22 @@ for i in l:
     # The original code merges them in a single data.frame
     # We'll do the same:
     signature_df = pd.DataFrame(index=adata.obs.index)
-    signature_df["ave_Hanada_pos_27g"] = ave_Hanada_pos_27g.values
-    signature_df["ave_Hanada_neg_5g"]  = ave_Hanada_neg_5g.values
-    signature_df["ave_Oliveira_virus_26g"] = ave_Oliveira_virus_26g.values
+    signature_df["CD8_ave_Hanada_pos_27g"] = ave_Hanada_pos_27g.values
+    signature_df["CD8_ave_Hanada_neg_5g"]  = ave_Hanada_neg_5g.values
+    signature_df["CD8_ave_Oliveira_virus_26g"] = ave_Oliveira_virus_26g.values
     
     df_combined = df_wide.join(signature_df, how="inner")
     final_df_CD8 = pd.concat([final_df_CD8, df_combined], ignore_index=False)
+
 for i in l:
     df_path = glob.glob(os.path.join(DATA_DIR, f"*{i}_10X.CD4.counts.txt.gz"))[0]
     df = read_table(df_path)
     adata = sc.AnnData(df.T)
     print(adata)
+    sc.pp.calculate_qc_metrics(adata, inplace=True)
+    
+    assert(set(adata.obs.index).issubset(set(meta.index)))
+    
     sc.pp.calculate_qc_metrics(adata, inplace=True)
     adata.obs = adata.obs.join(meta)
     
@@ -133,8 +169,26 @@ for i in l:
     adata.obs.index = new_index
     
     median_depth = np.median(adata.obs['total_counts'].values)
-    sc.pp.normalize_total(adata, target_sum=median_depth)
+    print(f"Median depth for {i}: {median_depth}")
+
+    print("Min and max of total_counts for adata:", 
+        np.min(adata.obs['total_counts'].values), 
+        np.max(adata.obs['total_counts'].values))
+
+    # Check percentage of cells with counts < min_rd or > max_rd
+    low_count = (adata.obs['total_counts'] < min_rd).sum()
+    high_count = (adata.obs['total_counts'] > max_rd).sum()
+    total_cells = adata.shape[0]
+    print(f"Percentage of cells with counts < {min_rd}: {100 * low_count / total_cells:.2f}%")
+    print(f"Percentage of cells with counts > {max_rd}: {100 * high_count / total_cells:.2f}%")
+
+    # Filter cells with total_counts < min_rd or > max_rd
+    adata = adata[(adata.obs['total_counts'] >= min_rd) & (adata.obs['total_counts'] <= max_rd)]
+
+    sc.pp.normalize_total(adata, target_sum=target_rd)
     sc.pp.log1p(adata)  # log transform
+
+    
     print(adata)
     sets_ave_CD4 = ["Hanada_pos_9g", "Hanada_neg_4g"]
     # Identify the rest for ssGSEA
@@ -163,7 +217,7 @@ for i in l:
         values='NES'      # Which score you want to spread out as columns
     )
     # rename columns
-    df_wide.columns = [f"CD4{col}" for col in df_wide.columns]
+    df_wide.columns = [f"CD4_{col}" for col in df_wide.columns]
     adata_df = pd.DataFrame(adata.X, 
                             index=adata.obs_names, 
                             columns=adata.var.index.tolist())
@@ -175,8 +229,8 @@ for i in l:
     # The original code merges them in a single data.frame
     # We'll do the same:
     signature_df = pd.DataFrame(index=adata.obs.index)
-    signature_df["Hanada_pos_9g"] = ave_Hanada_pos_9g.values
-    signature_df["Hanada_neg_4g"] = ave_Hanada_neg_4g.values
+    signature_df["CD4_ave_Hanada_pos_9g"] = ave_Hanada_pos_9g.values
+    signature_df["CD4_ave_Hanada_neg_4g"] = ave_Hanada_neg_4g.values
     
     df_combined = df_wide.join(signature_df, how="inner")
     final_df_CD4 = pd.concat([final_df_CD4, df_combined], ignore_index=False)

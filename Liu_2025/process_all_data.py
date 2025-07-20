@@ -1,50 +1,90 @@
-import os
+# %%
+# Dowload files: 
+
+# wget https://ftp.ncbi.nlm.nih.gov/geo/series/GSE243nnn/GSE243013/suppl/GSE243013_NSCLC_immune_scRNA_counts.mtx.gz
+
+# %%
+import gzip
 import pandas as pd
-import scanpy as sc
+import os
+import re
+import pandas as pd
 import numpy as np
+import scanpy as sc
+import gseapy as gp
+import seaborn as sns
+import matplotlib.pyplot as plt
+import anndata
+import shutil
+import pickle
+import scipy.io
 
-# set target read depth for normalization
 target_rd = 3000
-
-# Define thresholds for filtering
 min_rd = 500
 max_rd = 20000
 
-features = pd.read_csv("GSE236581_features.tsv.gz", compression='gzip', sep='\t', header=None)
-barcodes = pd.read_csv("GSE236581_barcodes.tsv.gz", compression='gzip', header=None)
-features.head(3)
-barcodes.head(3)
+# %%
+metadata = pd.read_csv("GSE243013_NSCLC_immune_scRNA_metadata.csv.gz")
+print(metadata.shape)
 
-from scipy.io import mmread
+# Select CD8T cells
+cd8t_cells = metadata[
+    (metadata['major_cell_type'] == 'T/NK cell') &
+    (metadata['sub_cell_type'].str.startswith('CD8T'))
+]
 
-import gzip
-with gzip.open("GSE236581_counts.mtx.gz", 'rb') as f:
-    counts = mmread(f).tocsc()  # or .tocsr()
-print(counts.shape)
+# Select CD4T cells
+cd4t_cells = metadata[
+    (metadata['major_cell_type'] == 'T/NK cell') &
+    (metadata['sub_cell_type'].str.startswith('CD4T'))
+]
 
-import anndata
-features.columns = ["gene_id", "gene_name", "feature_type"]
-barcodes.columns = ["barcode"]
+print(f"CD8T cells: {cd8t_cells.shape[0]}")
+print(f"CD4T cells: {cd4t_cells.shape[0]}")
 
-counts = counts.transpose()  
+# %%
+print(metadata.head())
 
-# Create the AnnData object
-adata = anndata.AnnData(X=counts)
+# %%
+# Tabulate major_cell_type in metadata
+major_counts = metadata['major_cell_type'].value_counts()
+print("Major cell type counts:")
+print(major_counts)
 
-# AnnData “obs” (rows) will correspond to cells
-adata.obs_names = barcodes["barcode"].values
+# Tabulate sub_cell_type among 'T/NK cell'
+tnk_sub_counts = metadata.loc[metadata['major_cell_type'] == 'T/NK cell', 'sub_cell_type'].value_counts()
+print("\nSub cell type counts within 'T/NK cell':")
+print(tnk_sub_counts)
 
-# AnnData “var” (columns) will correspond to genes
-adata.var_names = features["gene_id"].values
+# %%
+barcodes = pd.read_csv("GSE243013_barcodes.csv.gz")
+print(barcodes.shape)
+# Check if the barcodes and metadata.cellID are identical and in the same order
+same_order = (barcodes['barcode'].values == metadata['cellID'].values).all()
+print(f"Barcodes and metadata.cellID are identical and in the same order: {same_order}")
 
-# Store additional gene annotations
-adata.var["gene_name"] = features["gene_name"].values
-adata.var["feature_type"] = features["feature_type"].values
+# %%
+features = pd.read_csv("GSE243013_genes.csv.gz")
+print(features.shape)
+features.head()
 
+# %%
+X = scipy.io.mmread("GSE243013_NSCLC_immune_scRNA_counts.mtx.gz").tocsr()
+print(X.shape)
+
+# %%
+
+# Set feature names (row names)
+var = pd.DataFrame(index=features['geneSymbol'].tolist())
+obs = pd.DataFrame(index=barcodes['barcode'].tolist())
+
+# Create AnnData
+adata = anndata.AnnData(X=X, obs=obs, var=var)
 adata
 
-import pickle
+adata.var["gene_name"] = features["geneSymbol"].values
 
+# %%
 with open("signatures_CD8.pkl", "rb") as f:
     sigs_CD8 = pickle.load(f)
 
@@ -57,10 +97,6 @@ print({k: len(v) for k, v in sigs_CD4.items()})
 
 del sigs_CD4['Jansen_TermDiff_73g']
 del sigs_CD8['Lowery_neg_99g']
-
-metadata = pd.read_csv("GSE236581_CRC-ICB_metadata.txt.gz", compression='gzip', sep=' ')
-metadata.shape
-metadata.head(3)
 
 def average_genes(genes_list, df):
     valid_genes = [g for g in genes_list if g in df.columns]
@@ -89,42 +125,37 @@ def match_genes_in_sets(sigs_CD8, se2):
         gs[s1] = matched_genes
     return
 
-import gseapy as gp
-final_df_CD8 = pd.DataFrame()
-final_df_CD4 = pd.DataFrame()
+# %%
+final_df = pd.DataFrame()
 t_cell = {"CD4":[
- 'c01_CD4_Tn_CCR7',
- 'c02_CD4_Tn_SELL',
- 'c03_CD4_Tn_NR4A2',
- 'c04_CD4_Tcm_ANXA1',
- 'c05_CD4_Tcm_GPR183',
- 'c06_CD4_Trm_HSPA1A',
- 'c07_CD4_Th17_CTSH',
- 'c08_CD4_Tfh_CXCL13_IL6ST',
- 'c09_CD4_Th1_CXCL13_HAVCR2',
- 'c10_CD4_Temra_GZMB',
- 'c11_CD4_Treg_FOXP3',
- 'c12_CD4_Treg_KLRB1',
- 'c13_CD4_Treg_TNFRSF9',
- 'c14_CD4_MT'], 'CD8':[
- 'c15_CD8_Tn_CCR7',
- 'c16_CD8_Tn_SELL',
- 'c17_CD8_Tcm_GPR183',
- 'c18_CD8_Tcm_ANXA1',
- 'c19_CD8_Tem_CMC1',
- 'c20_CD8_Tem_GZMK',
- 'c21_CD8_Trm_XCL1',
- 'c22_CD8_Trm_HSPA1B',
- 'c23_CD8_Tex_LAYN',
- 'c24_CD8_Temra_CX3CR1',
- 'c25_CD8_Temra_TYROBP',
- 'c26_CD8_MAIT_KLRB1',
- 'c27_CD8_MAIT_SLC4A10',
- 'c28_CD8_IEL_CD160',
+'CD4T_Tem_GZMA', 
+'CD4T_Tfh_CXCL13', 
+'CD4T_Th1-like_CXCL13', 
+'CD4T_Tm_ANXA1', 
+'CD4T_Tm_XCL1', 
+'CD4T_Tn_CCR7', 
+'CD4T_Treg_CCR8', 
+'CD4T_Treg_FOXP3', 
+'CD4T_Treg_MKI67'], 
+"CD8":[
+'CD8T_ISG15', 
+'CD8T_MAIT_KLRB1', 
+'CD8T_NK-like_FGFBP2', 
+'CD8T_prf_MKI67', 
+'CD8T_Tem_GZMK+GZMH+', 
+'CD8T_Tem_GZMK+NR4A1+', 
+'CD8T_terminal_Tex_LAYN', 
+'CD8T_Tex_CXCL13', 
+'CD8T_Tm_IL7R', 
+'CD8T_Trm_ZNF683'
 ]}
+t_cell
+
+# %%
+adata.obs = adata.obs.join(metadata.set_index('cellID'))
+adata.obs
 
 sc.pp.calculate_qc_metrics(adata, inplace=True)
-adata.obs = adata.obs.join(metadata)
 
 # Summarize percentiles and min/max for adata
 print("Percentiles (25%, 50%, 75%) of total_counts for adata:", 
@@ -146,33 +177,34 @@ adata = adata[(adata.obs['total_counts'] >= min_rd) & (adata.obs['total_counts']
 sc.pp.normalize_total(adata, target_sum=target_rd)
 sc.pp.log1p(adata)  # log transform
 
-adata_all_CD4 = adata[adata.obs["SubCellType"].isin(t_cell['CD4'])]
-adata_all_CD8 = adata[adata.obs["SubCellType"].isin(t_cell['CD8'])]
+# %%
+adata_all_CD4 = adata[adata.obs["sub_cell_type"].isin(t_cell['CD4'])]
+adata_all_CD8 = adata[adata.obs["sub_cell_type"].isin(t_cell['CD8'])]
 
-adata_all_CD4
-adata_all_CD8
+print(f"CD4T cells: {adata_all_CD4.shape[0]}")
+print(f"CD8T cells: {adata_all_CD8.shape[0]}")
 
-del adata  # Free memory
+# %%
+final_df_CD8 = pd.DataFrame()
+final_df_CD4 = pd.DataFrame()
 
 for lib in t_cell['CD8']:
     print(lib)
-    adata = adata_all_CD8[adata_all_CD8.obs["SubCellType"]==lib]
+    adata = adata_all_CD8[adata_all_CD8.obs["sub_cell_type"]==lib]
     print(adata)
+    print(adata.var.head())
 
     sets_ave = ["Hanada_pos_27g", "Oliveira_virus_26g", "Hanada_neg_5g"]
     # Identify the rest for ssGSEA
     ssgsea_sets = {k: v for k, v in sigs_CD8.items() if k not in sets_ave}
+
     # gseapy.ssgsea expects a DataFrame where rows = genes, columns = samples.
     # So let's invert adata back: adata.X => n_cells x n_genes
     # We need genes x cells. We'll build a small data frame:
-    
+
     all_cells = np.array(adata.obs.index)
     n_batches = 10
     batches = np.array_split(all_cells, n_batches)
-    print([len(batch) for batch in batches])
-    # Check that the sum of batch lengths equals the total number of cells
-    assert sum(len(batch) for batch in batches) == len(all_cells), \
-        f"Batching error: sum={sum(len(batch) for batch in batches)}, expected={len(all_cells)}"
 
     # Store results
     ssgsea_all_results = []
@@ -184,11 +216,14 @@ for lib in t_cell['CD8']:
     for i, batch_cells in enumerate(batches):
         print(f"Processing batch {i+1} / {n_batches} ...")
 
+        # Extract gene expression matrix for this batch
         expr_batch = pd.DataFrame(
             adata[batch_cells].X.transpose().toarray(),  # genes x cells
-            index=adata.var['gene_name'].tolist(),   # Genes
+            index=adata.var.index,
             columns=batch_cells
         )
+
+        # Run ssGSEA
         result = gp.ssgsea(data=expr_batch,
                         gene_sets=ssgsea_sets,
                         sample_norm=False,
@@ -197,13 +232,14 @@ for lib in t_cell['CD8']:
                         max_size=20000)
         result.run()
 
+        # Store result
         ssgsea_all_results.append(result.res2d)
+
 
         expr_batch = pd.DataFrame(
             adata[batch_cells].X.toarray(), 
             index=batch_cells, 
-            columns=adata.var['gene_name'].tolist()
-        )
+            columns=adata.var.index)
 
         aa1 = average_genes(sigs_CD8["Hanada_pos_27g"], expr_batch)
         ave_Hanada_pos_27g = np.concatenate([ave_Hanada_pos_27g, aa1.values])
@@ -226,7 +262,7 @@ for lib in t_cell['CD8']:
     # rename columns
     df_wide.columns = [f"CD8_{col}" for col in df_wide.columns]
 
-    # Now combine them with ssgsea_scores
+    # Create a DataFrame for the average signatures
     signature_df = pd.DataFrame(index=adata.obs.index)
     signature_df["CD8_ave_Hanada_pos_27g"] = ave_Hanada_pos_27g
     signature_df["CD8_ave_Hanada_neg_5g"]  = ave_Hanada_neg_5g
@@ -235,10 +271,12 @@ for lib in t_cell['CD8']:
     df_combined = df_wide.join(signature_df, how="inner")
     final_df_CD8 = pd.concat([final_df_CD8, df_combined], ignore_index=False)
 
+
 for lib in t_cell['CD4']:
     print(lib)
-    adata = adata_all_CD4[adata_all_CD4.obs["SubCellType"]==lib]
+    adata = adata_all_CD4[adata_all_CD4.obs["sub_cell_type"]==lib]
     print(adata)
+    print(adata.var.head())
 
     sets_ave_CD4 = ["Hanada_pos_9g", "Hanada_neg_4g"]
     # Identify the rest for ssGSEA
@@ -263,7 +301,7 @@ for lib in t_cell['CD4']:
         # Extract gene expression matrix for this batch
         expr_batch = pd.DataFrame(
             adata[batch_cells].X.transpose().toarray(),  # genes x cells
-            index=adata.var['gene_name'].tolist(),
+            index=adata.var.index,
             columns=batch_cells
         )
 
@@ -279,10 +317,11 @@ for lib in t_cell['CD4']:
         # Store result
         ssgsea_all_results.append(result.res2d)
 
+
         expr_batch = pd.DataFrame(
             adata[batch_cells].X.toarray(), 
             index=batch_cells, 
-            columns=adata.var['gene_name'].tolist())
+            columns=adata.var.index)
 
         aa1 = average_genes(sigs_CD4["Hanada_pos_9g"], expr_batch)
         ave_Hanada_pos_9g = np.concatenate([ave_Hanada_pos_9g, aa1.values])   
@@ -292,16 +331,17 @@ for lib in t_cell['CD4']:
     combined_ssgsea = pd.concat(ssgsea_all_results, axis=0)
     combined_ssgsea
 
+
     # Transpose to cell x set
     df_wide = combined_ssgsea.pivot(
         index='Name',    # Each sample’s name/ID
         columns='Term',  # The gene set name
         values='NES'      # Which score you want to spread out as columns
     )
-
     # rename columns
     df_wide.columns = [f"CD4_{col}" for col in df_wide.columns]
 
+    # Create a DataFrame for the average signatures
     signature_df = pd.DataFrame(index=adata.obs.index)
     signature_df["CD4_ave_Hanada_pos_9g"] = ave_Hanada_pos_9g
     signature_df["CD4_ave_Hanada_neg_4g"] = ave_Hanada_neg_4g
@@ -309,5 +349,7 @@ for lib in t_cell['CD4']:
     df_combined = df_wide.join(signature_df, how="inner")
     final_df_CD4 = pd.concat([final_df_CD4, df_combined], ignore_index=False)
 
+
+# Save the final DataFrames to CSV files
 final_df_CD4.to_csv('output_CD4.csv',index = True)
 final_df_CD8.to_csv('output_CD8.csv',index = True)

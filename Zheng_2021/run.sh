@@ -14,3 +14,18 @@ ml scenicplus/1.0.0-foss-2022b
 
 cd /fh/working/sun_w/CAT/Zheng_2021
 python3  /fh/working/sun_w/CAT/Zheng_2021/process_all_data.py 
+
+# run it locallly
+# python process_all_data.py > process_all_data.log 2>&1
+
+#['BC','BCL','ESCA','MM','PACA','RC','THCA','UCEC','OV','FTC']
+# BC: Breast cancer
+# BCL: B cell lymphoma
+# ESCA: Esophageal carcinoma
+# MM: Melanoma
+# PACA: Pancreatic cancer
+# RC: Renal Cell Carcinoma
+# THCA: Thyroid Carcinoma
+# UCEC: Endometrial Carcinoma
+# OV: Ovarian cancer
+# FTC: Fallopain tube cancer
