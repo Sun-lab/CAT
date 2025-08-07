@@ -174,15 +174,34 @@ print(f"Percentage of cells with counts > {max_rd}: {100 * high_count / total_ce
 # Filter cells with total_counts < min_rd or > max_rd
 adata = adata[(adata.obs['total_counts'] >= min_rd) & (adata.obs['total_counts'] <= max_rd)]
 
-sc.pp.normalize_total(adata, target_sum=target_rd)
-sc.pp.log1p(adata)  # log transform
-
 # %%
 adata_all_CD4 = adata[adata.obs["sub_cell_type"].isin(t_cell['CD4'])]
 adata_all_CD8 = adata[adata.obs["sub_cell_type"].isin(t_cell['CD8'])]
 
 print(f"CD4T cells: {adata_all_CD4.shape[0]}")
 print(f"CD8T cells: {adata_all_CD8.shape[0]}")
+
+print(adata_all_CD8.X[:3, :3].toarray())
+
+#%% Save the filtered data
+import scipy.io
+import subprocess
+
+scipy.io.mmwrite("Liu_2025_CD4_counts.mtx", adata_all_CD4.X)
+scipy.io.mmwrite("Liu_2025_CD8_counts.mtx", adata_all_CD8.X)
+
+subprocess.run(["gzip", "-f", "Liu_2025_CD4_counts.mtx"])
+subprocess.run(["gzip", "-f", "Liu_2025_CD8_counts.mtx"])
+
+del adata  # Free memory
+
+#%% 
+sc.pp.normalize_total(adata_all_CD4, target_sum=target_rd)
+sc.pp.log1p(adata_all_CD4)  # log transform
+
+sc.pp.normalize_total(adata_all_CD8, target_sum=target_rd)
+sc.pp.log1p(adata_all_CD8)  # log transform
+
 
 # %%
 final_df_CD8 = pd.DataFrame()
