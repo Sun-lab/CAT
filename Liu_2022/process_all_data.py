@@ -108,14 +108,30 @@ adata_all_CD8 = adata[adata.obs["celltype"]=='CD8']
 print(adata_all_CD8.X[:3, :3].toarray())
 
 #%% Save the filtered data
+
 import scipy.io
 import subprocess
 
-scipy.io.mmwrite("Liu_2022_CD4_counts.mtx", adata_all_CD4.X)
-scipy.io.mmwrite("Liu_2022_CD8_counts.mtx", adata_all_CD8.X)
+os.makedirs("Liu_2022_CD4", exist_ok=True)
+os.makedirs("Liu_2022_CD8", exist_ok=True)
 
-subprocess.run(["gzip", "-f", "Liu_2022_CD4_counts.mtx"])
-subprocess.run(["gzip", "-f", "Liu_2022_CD8_counts.mtx"])
+scipy.io.mmwrite("Liu_2022_CD4/matrix.mtx", adata_all_CD4.X)
+scipy.io.mmwrite("Liu_2022_CD8/matrix.mtx", adata_all_CD8.X)
+
+subprocess.run(["gzip", "-f", "Liu_2022_CD4/matrix.mtx"])
+subprocess.run(["gzip", "-f", "Liu_2022_CD8/matrix.mtx"])
+
+# Save gene names (variables)
+adata_all_CD4.var_names.to_series().to_csv("Liu_2022_CD4/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.var_names.to_series().to_csv("Liu_2022_CD8/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+
+# Save cell names (observations)
+adata_all_CD4.obs_names.to_series().to_csv("Liu_2022_CD4/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.obs_names.to_series().to_csv("Liu_2022_CD8/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
 
 del adata  # Free memory
 

@@ -42,7 +42,6 @@ cd4t_cells = metadata[
 print(f"CD8T cells: {cd8t_cells.shape[0]}")
 print(f"CD4T cells: {cd4t_cells.shape[0]}")
 
-# %%
 print(metadata.head())
 
 # %%
@@ -71,8 +70,6 @@ features.head()
 # %%
 X = scipy.io.mmread("GSE243013_NSCLC_immune_scRNA_counts.mtx.gz").tocsr()
 print(X.shape)
-
-# %%
 
 # Set feature names (row names)
 var = pd.DataFrame(index=features['geneSymbol'].tolist())
@@ -187,12 +184,26 @@ print(adata_all_CD8.X[:3, :3].toarray())
 import scipy.io
 import subprocess
 
-scipy.io.mmwrite("Liu_2025_CD4_counts.mtx", adata_all_CD4.X)
-scipy.io.mmwrite("Liu_2025_CD8_counts.mtx", adata_all_CD8.X)
+os.makedirs("Liu_2025_CD4", exist_ok=True)
+os.makedirs("Liu_2025_CD8", exist_ok=True)
 
-subprocess.run(["gzip", "-f", "Liu_2025_CD4_counts.mtx"])
-subprocess.run(["gzip", "-f", "Liu_2025_CD8_counts.mtx"])
+scipy.io.mmwrite("Liu_2025_CD4/matrix.mtx", adata_all_CD4.X)
+scipy.io.mmwrite("Liu_2025_CD8/matrix.mtx", adata_all_CD8.X)
 
+subprocess.run(["gzip", "-f", "Liu_2025_CD4/matrix.mtx"])
+subprocess.run(["gzip", "-f", "Liu_2025_CD8/matrix.mtx"])
+
+# Save gene names (variables)
+adata_all_CD4.var_names.to_series().to_csv("Liu_2025_CD4/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.var_names.to_series().to_csv("Liu_2025_CD8/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+
+# Save cell names (observations)
+adata_all_CD4.obs_names.to_series().to_csv("Liu_2025_CD4/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.obs_names.to_series().to_csv("Liu_2025_CD8/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
 del adata  # Free memory
 
 #%% 

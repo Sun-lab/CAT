@@ -97,6 +97,7 @@ print(f"Percentage of cells with counts > {max_rd}: {100 * high_count / total_ce
 
 # Filter cells with total_counts < min_rd or > max_rd
 adata = adata[(adata.obs['total_counts'] >= min_rd) & (adata.obs['total_counts'] <= max_rd)]
+
 #%%
 
 with pd.option_context('display.max_columns', None):
@@ -113,11 +114,23 @@ print(adata_all_CD8.X[:3, :3].toarray())
 import scipy.io
 import subprocess
 
-scipy.io.mmwrite("Chow_2023_CD4_counts.mtx", adata_all_CD4.X)
-scipy.io.mmwrite("Chow_2023_CD8_counts.mtx", adata_all_CD8.X)
+scipy.io.mmwrite("Chow_2023_CD4/matrix.mtx", adata_all_CD4.X)
+scipy.io.mmwrite("Chow_2023_CD8/matrix.mtx", adata_all_CD8.X)
 
-subprocess.run(["gzip", "-f", "Chow_2023_CD4_counts.mtx"])
-subprocess.run(["gzip", "-f", "Chow_2023_CD8_counts.mtx"])
+subprocess.run(["gzip", "-f", "Chow_2023_CD4/matrix.mtx"])
+subprocess.run(["gzip", "-f", "Chow_2023_CD8/matrix.mtx"])
+
+# Save gene names (variables)
+adata_all_CD4.var_names.to_series().to_csv("Chow_2023_CD4/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.var_names.to_series().to_csv("Chow_2023_CD8/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+
+# Save cell names (observations)
+adata_all_CD4.obs_names.to_series().to_csv("Chow_2023_CD4/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.obs_names.to_series().to_csv("Chow_2023_CD8/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
 
 del adata  # Free memory
 
