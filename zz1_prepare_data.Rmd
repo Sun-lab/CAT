@@ -1,0 +1,1071 @@
+---
+title: "Check results"
+author: "Wei Sun"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: journal
+    highlight: tango
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    number_sections: false
+  df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(width = 80)
+```
+
+# Setup
+
+## Load R libraries
+```{r load_libraries, warning = FALSE, message = FALSE}
+library(data.table)
+library(Matrix)
+library(ggplot2)
+library(ggpubr)
+library(stringr)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggpointdensity)
+library(viridis)
+
+theme_set(theme_classic())
+
+rename_tcr_columns <- function(dt) {
+  # Ensure input is a data.table
+  if (!is.data.table(dt)) {
+    stop("Input must be a data.table.")
+  }
+
+  # Create a named vector of new names
+  new_names <- c(
+    "CDR3(Alpha)"   = "TRA_cdr3",
+    "cdr3(Alpha)"   = "TRA_cdr3",
+    "V_gene(Alpha)" = "TRA_v_gene",
+    "v_gene(Alpha)" = "TRA_v_gene",
+    "J_gene(Alpha)" = "TRA_j_gene",
+    "j_gene(Alpha)" = "TRA_j_gene",
+    "CDR3(Beta)"    = "TRB_cdr3",
+    "cdr3(Beta)"    = "TRB_cdr3",
+    "V_gene(Beta)"  = "TRB_v_gene",
+    "v_gene(Beta)"  = "TRB_v_gene",
+    "J_gene(Beta)"  = "TRB_j_gene",
+    "j_gene(Beta)"  = "TRB_j_gene",
+    "nUMI(Alpha)"   = "TRA_nUMI", 
+    "nUMI(Beta)"    = "TRB_nUMI",
+    "umis(Alpha)"   = "TRA_nUMI",
+    "umis(Beta)"    = "TRB_nUMI"
+  )
+  # Apply renaming only for columns that exist
+  existing <- names(new_names)[names(new_names) %in% names(dt)]
+  setnames(dt, old = existing, new = new_names[existing])
+  
+  return(dt)
+}
+
+cols_both = c('cell_id', 'study', 'cancer_type', 'Patient', 'Sample', 
+              'Treatment', 'Tissue', 
+             'cancer_reactive_per_cell', 'cancer_reactive_by_cluster', 
+             'barcode', 'TRA_cdr3', 'TRA_v_gene', 'TRA_j_gene', 
+             'TRB_cdr3', 'TRB_v_gene', 'TRB_j_gene', 'TRA_nUMI', 'TRB_nUMI')
+
+cols_CD4 <- c("CD4_Caushi_Tfh2_66g", "CD4_Lowery_neg_37g", 
+              "CD4_Lowery_pos_40g", "CD4_Oh_CXCL13_50g", 
+              "CD4_ave_Hanada_pos_9g", "CD4_ave_Hanada_neg_4g")
+
+
+cols_CD8 <- c("CD8_Lowery_pos_243g", "CD8_Oliveira_TTE_100g", 
+              "CD8_Oliveira_pos_74g", "CD8_Yost_CD8_Exh_100g", 
+              "CD8_ave_Hanada_pos_27g", "CD8_ave_Hanada_neg_5g", 
+              "CD8_ave_Oliveira_virus_26g")
+
+tcr_dir = "~/research/GitHub/cancer_reactive_TCR/data_TCR/data"
+```
+
+## R function to match the names in df_new to df_ref to disgard the differnce due to upper/lower cases
+
+```{r}
+match_name <- function(df_new, df_ref){
+  name_map = tolower(names(df_ref))
+  
+  names_new <- sapply(names(df_new), function(x) {
+    lower_x <- tolower(x)
+    if (lower_x %in% name_map) {
+      names(df_ref)[match(lower_x, name_map)]
+    } else {
+      x  # keep original name if no match
+    }
+  })
+
+  names_new
+}
+```
+
+# Read in cell meta data
+
+## Chen 2024
+
+Chen et al. track the spatiotemporal immune dynamics of 22 CRC patients under PD-1 blockade. Samples include tumor, adj.normal, and blood.
+
+According to the supplementary table, LN is lymphnode. It is not clear what is TN. There is only one TN sample: P08-TN-I, in baseline time point. Since this patient already has samples from tumor, normal and blood, we delete the TN samples. 
+
+```{r}
+CD4_info = fread("Chen_2024/cell_meta_data_CD4_cleaned.csv")
+dim(CD4_info)
+CD4_info[1:2,]
+
+CD8_info = fread("Chen_2024/cell_meta_data_CD8_cleaned.csv")
+dim(CD8_info)
+CD8_info[1:2,]
+
+setnames(CD4_info, old = "V1", new = "cell_id")
+setnames(CD8_info, old = "V1", new = "cell_id")
+
+stopifnot(length(unique(CD4_info$cell_id)) == nrow(CD4_info))
+stopifnot(length(unique(CD8_info$cell_id)) == nrow(CD8_info))
+
+table(CD8_info$`Full_length(Alpha)`)
+table(CD8_info$`Full_length(Beta)`)
+
+summary(CD4_info$n_genes_by_counts)
+summary(CD8_info$n_genes_by_counts)
+
+apply(CD4_info[, ..cols_CD4], 2, mean)
+apply(CD4_info[, ..cols_CD4], 2, sd)
+
+# add sample id for CD4
+split_id <- tstrsplit(CD4_info$cell_id, split = "-|_")
+length(split_id)
+stopifnot (all(sapply(split_id, length) == nrow(CD4_info))) 
+
+split_id[[1]] = gsub("CRC", "P", split_id[[1]])
+table(split_id[[1]] == CD4_info$Patient)
+table(split_id[[2]], CD4_info$Tissue)
+table(split_id[[3]], CD4_info$Treatment)
+table(paste0(split_id[[4]], "-1") == CD4_info$barcode)
+
+CD4_info[, `:=`(
+  Sample = paste(split_id[[1]], split_id[[2]], split_id[[3]], sep = "-"), 
+  Treatment = "anti-PD-1"
+)]
+
+table(CD4_info$Sample[CD4_info$Tissue == "TN"])
+table(CD4_info$Sample[CD4_info$Tissue == "LN"])
+
+CD4_info = CD4_info[CD4_info$Tissue != "TN"]
+dim(CD4_info)
+
+# add sample id for CD8
+split_id <- tstrsplit(CD8_info$cell_id, split = "-|_")
+length(split_id)
+stopifnot (all(sapply(split_id, length) == nrow(CD8_info))) 
+
+split_id[[1]] = gsub("CRC", "P", split_id[[1]])
+table(split_id[[1]] == CD8_info$Patient)
+table(split_id[[2]], CD8_info$Tissue)
+table(split_id[[3]], CD8_info$Treatment)
+table(paste0(split_id[[4]], "-1") == CD8_info$barcode)
+
+CD8_info[, `:=`(
+  Sample = paste(split_id[[1]], split_id[[2]], split_id[[3]], sep = "-"), 
+  Treatment = "anti-PD-1"
+)]
+
+table(CD8_info$Sample[CD8_info$Tissue == "TN"])
+table(CD8_info$Sample[CD8_info$Tissue == "LN"])
+
+CD8_info = CD8_info[CD8_info$Tissue != "TN"]
+dim(CD8_info)
+
+CD4_info = rename_tcr_columns(CD4_info)
+CD8_info = rename_tcr_columns(CD8_info)
+
+CD4_info[,study := "Chen2024"]
+CD8_info[,study := "Chen2024"]
+
+CD4_info[,cancer_type := "COAD"]
+CD8_info[,cancer_type := "COAD"]
+
+colnames_both = intersect(names(CD4_info), names(CD8_info))
+colnames_CD4  = setdiff(names(CD4_info), names(CD8_info))
+colnames_CD8  = setdiff(names(CD8_info), names(CD4_info))
+
+print(paste0("'", colnames_both, "'") |> paste(collapse = ", "))
+print(paste0("'", colnames_CD4, "'") |> paste(collapse = ", "))
+print(paste0("'", colnames_CD8, "'") |> paste(collapse = ", "))
+
+stopifnot(all(cols_both %in% colnames_both))
+stopifnot(all(cols_CD4 %in% colnames_CD4))
+stopifnot(all(cols_CD8 %in% colnames_CD8))
+
+cols2kp_CD4 = c(cols_both, cols_CD4)
+cols2kp_CD8 = c(cols_both, cols_CD8)
+
+CD4 = CD4_info[, ..cols2kp_CD4]
+CD8 = CD8_info[, ..cols2kp_CD8]
+
+
+dim(CD4)
+CD4[1:2,]
+
+dim(CD8)
+CD8[1:2,]
+
+summary(CD4$TRA_nUMI)
+summary(CD4$TRB_nUMI)
+
+summary(CD8$TRA_nUMI)
+summary(CD8$TRB_nUMI)
+
+# check the number of samples and number of T cells per sample
+tb_CD4 = table(CD4$Sample)
+length(tb_CD4)
+
+tb_CD8 = table(CD8$Sample)
+length(tb_CD8)
+
+summary(as.numeric(tb_CD4))
+summary(as.numeric(tb_CD8))
+
+```
+
+## Zheng et al. 2021
+
+Pan-cancer study of T cells using samples from tumor, adj.normal, and blood.
+
+```{r}
+CD4_info = fread("Zheng_2021/cell_meta_data_CD4_cleaned.csv")
+dim(CD4_info)
+CD4_info[1:2,]
+
+CD8_info = fread("Zheng_2021/cell_meta_data_CD8_cleaned.csv")
+dim(CD8_info)
+CD8_info[1:2,]
+
+stopifnot(length(unique(CD8_info$cell_id)) == nrow(CD8_info))
+
+split_libid <- tstrsplit(CD4_info$library.id, "-", fixed = TRUE)
+length(split_libid)
+sapply(split_libid, head)
+stopifnot (all(sapply(split_libid, length) == nrow(CD4_info))) 
+
+CD4_info[, `:=`(
+  cancer_type = split_libid[[1]], 
+  Patient     = paste(split_libid[[1]], split_libid[[2]], sep="-"), 
+  Sample      = paste(split_libid[[1]], split_libid[[2]], sep="-"),  
+  Tissue      = split_libid[[3]]
+)]
+
+split_libid <- tstrsplit(CD8_info$library.id, "-", fixed = TRUE)
+stopifnot (all(sapply(split_libid, length) == nrow(CD8_info))) 
+
+CD8_info[, `:=`(
+  cancer_type = split_libid[[1]], 
+  Patient     = paste(split_libid[[1]], split_libid[[2]], sep="-"), 
+  Sample      = paste(split_libid[[1]], split_libid[[2]], sep="-"),  
+  Tissue      = split_libid[[3]]
+)]
+
+table(CD8$Tissue)
+table(CD4_info$Tissue)
+table(CD8_info$Tissue)
+
+CD8_info$Tissue <- recode(CD8_info$Tissue, N = "Normal", 
+                          P = "Blood", T = "Tumor")
+CD4_info$Tissue <- recode(CD4_info$Tissue, N = "Normal", 
+                          P = "Blood", T = "Tumor")
+
+table(CD4_info$Tissue)
+table(CD8_info$Tissue)
+
+table(CD4_info$cancer_type)
+table(CD8_info$cancer_type)
+
+CD4_info[,study := "Zheng2021"]
+CD8_info[,study := "Zheng2021"]
+
+CD4_info[,Treatment := NA]
+CD8_info[,Treatment := NA]
+
+split_id <- tstrsplit(CD4_info$cell_id, "-", fixed = TRUE)
+stopifnot (all(sapply(split_id, length) == nrow(CD4_info))) 
+stopifnot(all(split_id[[2]] == CD4_info$cancer_type))
+CD4_info[, barcode := split_id[[1]]]
+
+split_id <- tstrsplit(CD8_info$cell_id, "-", fixed = TRUE)
+stopifnot (all(sapply(split_id, length) == nrow(CD8_info))) 
+stopifnot(all(split_id[[2]] == CD8_info$cancer_type))
+CD8_info[, barcode := split_id[[1]]]
+
+names(CD4_info) = match_name(CD4_info, CD4)
+names(CD8_info) = match_name(CD8_info, CD8)
+
+CD4_info = rename_tcr_columns(CD4_info)
+CD8_info = rename_tcr_columns(CD8_info)
+
+setdiff(names(CD4), names(CD4_info))
+setdiff(names(CD4_info), names(CD4))
+
+setdiff(names(CD8), names(CD8_info))
+setdiff(names(CD8_info), names(CD8))
+
+nm_CD4 = names(CD4)
+CD4 = rbind(CD4, CD4_info[,..nm_CD4])
+
+nm_CD8 = names(CD8)
+CD8 = rbind(CD8, CD8_info[,..nm_CD8])
+
+dim(CD4)
+CD4[1:2,]
+
+dim(CD8)
+CD8[1:2,]
+
+```
+
+## Chow_2023
+
+PBMC from 24 patients with MMRd endometrial cancer. 
+
+```{r}
+CD4_info = fread("Chow_2023/cell_meta_data_CD4_cleaned.csv")
+dim(CD4_info)
+CD4_info[1:2,]
+
+CD8_info = fread("Chow_2023/cell_meta_data_CD8_cleaned.csv")
+dim(CD8_info)
+CD8_info[1:2,]
+
+setnames(CD4_info, old = "orig.ident", new = "Patient")
+setnames(CD8_info, old = "orig.ident", new = "Patient")
+
+CD4_info[,study := "Chow2023"]
+CD8_info[,study := "Chow2023"]
+
+CD4_info[,Treatment := "anti-PD-1"]
+CD8_info[,Treatment := "anti-PD-1"]
+
+CD4_info[,Tissue := "Blood"]
+CD8_info[,Tissue := "Blood"]
+
+CD4_info[,cancer_type := "EC"]
+CD8_info[,cancer_type := "EC"]
+
+names(CD4_info) = match_name(CD4_info, CD4)
+names(CD8_info) = match_name(CD8_info, CD8)
+
+CD4_info = rename_tcr_columns(CD4_info)
+CD8_info = rename_tcr_columns(CD8_info)
+
+## add 'study_clone_id'
+CD4[,study_clone_id := NA] 
+CD8[,study_clone_id := NA] 
+
+setnames(CD4_info, old = "raw_clonotype_id", new = "study_clone_id")
+setnames(CD8_info, old = "raw_clonotype_id", new = "study_clone_id")
+
+setdiff(names(CD4), names(CD4_info))
+setdiff(names(CD4_info), names(CD4))
+
+setdiff(names(CD8), names(CD8_info))
+setdiff(names(CD8_info), names(CD8))
+
+nm_CD4 = names(CD4)
+CD4 = rbind(CD4, CD4_info[,..nm_CD4])
+
+nm_CD8 = names(CD8)
+CD8 = rbind(CD8, CD8_info[,..nm_CD8])
+
+dim(CD4)
+CD4[1:2,]
+
+dim(CD8)
+CD8[1:2,]
+
+table(CD4$cancer_type)
+table(CD8$cancer_type)
+```
+
+## Liu et al. 2022
+
+scRNA(TCR)-seq data on 47 tumor biopsies from 36 patients with NSCLC following PD-1-based therapies. 
+
+```{r}
+CD4_info = fread("Liu_2022/cell_meta_data_CD4_cleaned.csv")
+dim(CD4_info)
+CD4_info[1:2,]
+
+CD8_info = fread("Liu_2022/cell_meta_data_CD8_cleaned.csv")
+dim(CD8_info)
+CD8_info[1:2,]
+
+setnames(CD4_info, old = "V1", new = "cell_id")
+setnames(CD8_info, old = "V1", new = "cell_id")
+
+CD4_info[,study := "Liu2022"]
+CD8_info[,study := "Liu2022"]
+
+CD4_info[,Treatment := "anti-PD-1"]
+CD8_info[,Treatment := "anti-PD-1"]
+
+CD4_info[,Tissue := "Tumor"]
+CD8_info[,Tissue := "Tumor"]
+
+CD4_info[,cancer_type := "NSCLC"]
+CD8_info[,cancer_type := "NSCLC"]
+
+CD4_info[,barcode := sub(".*\\.", "", cell_id)]
+CD8_info[,barcode := sub(".*\\.", "", cell_id)]
+
+CD4_sample = sub("\\.[^.]*$", "", CD4_info$cell_id)
+tb1 = table(CD4_sample, CD4_info$sample)
+tb1[1:6,1:6]
+
+names(CD4_info) = match_name(CD4_info, CD4)
+names(CD8_info) = match_name(CD8_info, CD8)
+
+CD4_info = rename_tcr_columns(CD4_info)
+CD8_info = rename_tcr_columns(CD8_info)
+
+CD4_info[,study_clone_id := NA] 
+CD8_info[,study_clone_id := NA] 
+
+setdiff(names(CD4), names(CD4_info))
+setdiff(names(CD4_info), names(CD4))
+
+setdiff(names(CD8), names(CD8_info))
+setdiff(names(CD8_info), names(CD8))
+
+nm_CD4 = names(CD4)
+CD4 = rbind(CD4, CD4_info[,..nm_CD4])
+
+nm_CD8 = names(CD8)
+CD8 = rbind(CD8, CD8_info[,..nm_CD8])
+
+dim(CD4)
+CD4[1:2,]
+
+dim(CD8)
+CD8[1:2,]
+
+table(CD4$cancer_type)
+table(CD8$cancer_type)
+```
+
+## Liu et al. 2025
+
+scRNA/TCR-seq on surgically resected tumors collected after neoadjuvant treatment for 234 patients.
+
+```{r}
+CD4_info = fread("Liu_2025/cell_meta_data_CD4_cleaned.csv")
+dim(CD4_info)
+CD4_info[1:2,]
+
+CD8_info = fread("Liu_2025/cell_meta_data_CD8_cleaned.csv")
+dim(CD8_info)
+CD8_info[1:2,]
+
+tapply(CD4_info$clonotype_number, CD4_info$expansion, summary)
+tapply(CD8_info$clonotype_number, CD8_info$expansion, summary)
+
+setnames(CD4_info, old = "V1", new = "cell_id")
+setnames(CD8_info, old = "V1", new = "cell_id")
+
+setnames(CD4_info, old = "clonotype", new = "study_clone_id")
+setnames(CD8_info, old = "clonotype", new = "study_clone_id")
+
+setnames(CD4_info, old = "clonotype_number", new = "study_clone_number")
+setnames(CD8_info, old = "clonotype_number", new = "study_clone_number")
+
+## add 'study_clone_id'
+CD4[,study_clone_number := NA] 
+CD8[,study_clone_number := NA] 
+
+setnames(CD4_info, old = "sampleID", new = "sample")
+setnames(CD8_info, old = "sampleID", new = "sample")
+
+CD4_info[1:2,]
+CD8_info[1:2,]
+
+CD4_info[,study := "Liu2025"]
+CD8_info[,study := "Liu2025"]
+
+CD4_info[,Treatment := "anti-PD-1"]
+CD8_info[,Treatment := "anti-PD-1"]
+
+CD4_info[,Tissue := "Tumor"]
+CD8_info[,Tissue := "Tumor"]
+
+CD4_info[,cancer_type := "NSCLC"]
+CD8_info[,cancer_type := "NSCLC"]
+
+CD4_info[,barcode := sub(".*\\-", "", cell_id)]
+CD8_info[,barcode := sub(".*\\-", "", cell_id)]
+
+CD4_sample = sub("-[^.]*$", "", CD4_info$cell_id)
+table(CD4_sample == CD4_info$sample)
+
+CD4_info[,Patient := sample]
+CD8_info[,Patient := sample]
+
+CD4_info[,TRA_nUMI := NA]
+CD4_info[,TRB_nUMI := NA]
+
+CD8_info[,TRA_nUMI := NA]
+CD8_info[,TRB_nUMI := NA]
+
+names(CD4_info) = match_name(CD4_info, CD4)
+names(CD8_info) = match_name(CD8_info, CD8)
+
+CD4_info = rename_tcr_columns(CD4_info)
+CD8_info = rename_tcr_columns(CD8_info)
+
+setdiff(names(CD4), names(CD4_info))
+setdiff(names(CD4_info), names(CD4))
+
+setdiff(names(CD8), names(CD8_info))
+setdiff(names(CD8_info), names(CD8))
+
+nm_CD4 = names(CD4)
+CD4 = rbind(CD4, CD4_info[,..nm_CD4])
+
+nm_CD8 = names(CD8)
+CD8 = rbind(CD8, CD8_info[,..nm_CD8])
+
+table(CD4$cancer_type)
+table(CD8$cancer_type)
+
+```
+
+## Update column names
+
+```{r}
+dim(CD4)
+dim(CD8)
+CD4[1:2,]
+CD8[1:2,]
+
+setnames(CD4, old = "cancer_reactive_by_cluster", 
+         new = "study_specific_CR_by_cluster")
+
+setnames(CD4, old = "cancer_reactive_per_cell", 
+         new = "study_specific_CR_per_cell")
+
+setnames(CD8, old = "cancer_reactive_by_cluster", 
+         new = "study_specific_CR_by_cluster")
+
+setnames(CD8, old = "cancer_reactive_per_cell", 
+         new = "study_specific_CR_per_cell")
+
+```
+
+## Filter out entries that do not have TCR information
+
+While some entries miss j-gene, the v-gene information is available. 
+```{r}
+table(CD4$TRA_cdr3 == "", CD4$TRB_cdr3 == "")
+table(CD8$TRA_cdr3 == "", CD8$TRB_cdr3 == "")
+
+table(CD4$study, CD4$TRA_cdr3 == "" | CD4$TRB_cdr3 == "")
+table(CD8$study, CD8$TRA_cdr3 == "" | CD8$TRB_cdr3 == "")
+
+dim(CD4)
+dim(CD8)
+CD4 = CD4[CD4$TRA_cdr3 != "" & CD4$TRB_cdr3 != "", ]
+CD8 = CD8[CD8$TRA_cdr3 != "" & CD8$TRB_cdr3 != "", ]
+dim(CD4)
+dim(CD8)
+
+table(CD4$TRA_v_gene == "", CD4$TRB_v_gene == "")
+table(CD4$TRA_j_gene == "", CD4$TRB_j_gene == "")
+
+table(CD8$TRA_v_gene == "", CD8$TRB_v_gene == "")
+table(CD8$TRA_j_gene == "", CD8$TRB_j_gene == "")
+
+sort(table(CD4$TRA_v_gene), decreasing = TRUE)
+sort(table(CD8$TRA_v_gene), decreasing = TRUE)
+
+```
+
+## Summarize the number of cells
+
+```{r fig.width = 4, fig.height = 3}
+dim(CD4)
+dim(CD8)
+table(CD4$study)
+table(CD8$study)
+
+table(CD4$Tissue)
+table(CD8$Tissue)
+
+
+CD8[, Patient := paste(study, Patient, sep = "_")]
+CD4[, Patient := paste(study, Patient, sep = "_")]
+
+tp_CD8 = table(CD8$Patient)
+tp_CD4 = table(CD4$Patient)
+
+length(tp_CD8)
+length(tp_CD4)
+
+summary(as.numeric(tp_CD8))
+summary(as.numeric(tp_CD4))
+
+table(CD8$cancer_type, CD8$Tissue)
+table(CD4$cancer_type, CD4$Tissue)
+
+CD4_p = unique(CD4[,.(cancer_type, Patient)])
+CD8_p = unique(CD4[,.(cancer_type, Patient)])
+
+dim(CD4_p)
+dim(CD8_p)
+
+table(CD4_p$cancer_type)
+table(CD8_p$cancer_type)
+
+
+cd4_counts <- c(Blood = 148723, Normal = 37744, Tumor = 308408)
+cd8_counts <- c(Blood = 96205, Normal = 52873, Tumor = 326080)
+
+# Combine into a tidy data frame
+df <- data.frame(
+  Tissue = rep(names(cd4_counts), 2),
+  Count = c(cd4_counts, cd8_counts),
+  CellType = rep(c("CD4", "CD8"), each = length(cd4_counts))
+)
+
+# Convert counts to thousands
+df$Count_k <- df$Count / 1000
+
+# Plot
+ggplot(df, aes(x = Tissue, y = Count_k, fill = CellType)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  scale_fill_manual(values = c("CD4" = "lightblue", "CD8" = "salmon")) +
+  labs(
+    x = NULL,
+    y = "# of Cells (x1000)",
+    fill = "Cell Type"
+  ) +
+  theme_minimal(base_size = 20) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1) 
+  )
+
+```
+
+## Classify cells as cancer reactive
+
+```{r}
+pos_sigs_CD8 = c("CD8_Lowery_pos_243g", 
+                 "CD8_Oliveira_TTE_100g", "CD8_Oliveira_pos_74g", 
+                 "CD8_Yost_CD8_Exh_100g", "CD8_ave_Hanada_pos_27g")
+
+neg_sigs_CD8 = c("CD8_ave_Hanada_neg_5g", "CD8_ave_Oliveira_virus_26g")
+
+pos_sigs_CD4 = c("CD4_ave_Hanada_pos_9g", "CD4_Caushi_Tfh2_66g", 
+                 "CD4_Lowery_pos_40g", "CD4_Oh_CXCL13_50g")
+
+neg_sigs_CD4 = c("CD4_Lowery_neg_37g", "CD4_ave_Hanada_neg_4g")
+
+classify_cells <- function(df, cell_type, pos_sigs, neg_sigs) {
+  # Combine all signature columns
+  cols <- c(pos_sigs, neg_sigs)
+
+  # Z-score normalization (within subset)
+  df[, (cols) := lapply(.SD, scale), .SDcols = cols]
+
+  # Compute mean positive and negative scores
+  pos_score_col <- paste0("pos_score_", cell_type)
+  neg_score_col <- paste0("neg_score_", cell_type)
+
+  df[, (pos_score_col) := rowMeans(.SD, na.rm = TRUE), .SDcols = pos_sigs]
+  df[, (neg_score_col) := rowMeans(.SD, na.rm = TRUE), .SDcols = neg_sigs]
+
+  # Compute cutoffs (median)
+  pos_cut <- median(df[[pos_score_col]], na.rm = TRUE)
+  neg_cut <- median(df[[neg_score_col]], na.rm = TRUE)
+
+  # Classify cancer-reactive cells
+  reactive_col = "cancer_reactive_per_cell"
+  df[, (reactive_col) := get(pos_score_col) > pos_cut & get(neg_score_col) < neg_cut]
+
+  return(list(df = df, pos_cut = pos_cut, neg_cut = neg_cut))
+}
+
+res_cd8 <- classify_cells(CD8, "CD8", pos_sigs_CD8, neg_sigs_CD8)
+res_cd4 <- classify_cells(CD4, "CD4", pos_sigs_CD4, neg_sigs_CD4)
+
+CD8 <- res_cd8$df
+res_cd8$pos_cut
+res_cd8$neg_cut
+
+CD4 <- res_cd4$df
+res_cd4$pos_cut
+res_cd4$neg_cut
+
+table(CD8$cancer_reactive_per_cell, CD8$study_specific_CR_per_cell)
+table(CD4$cancer_reactive_per_cell, CD4$study_specific_CR_per_cell)
+
+```
+
+
+## Illustrate cancer reactive status
+
+```{r fig.width = 4.5, fig.height = 3}
+med_pos <- median(CD8$pos_score_CD8, na.rm = TRUE)
+med_neg <- median(CD8$neg_score_CD8, na.rm = TRUE)
+
+# Plot
+ggplot(CD8, aes(x = pos_score_CD8, y = neg_score_CD8)) +
+  geom_pointdensity(alpha = 0.4) + 
+  scale_color_viridis() + 
+  # Median guide lines
+  geom_vline(xintercept = med_pos, linetype = "dashed", color = "orange") +
+  geom_hline(yintercept = med_neg, linetype = "dashed", color = "orange") +
+  labs(
+    title = "CD8+ T", 
+    x = "Positive score",
+    y = "Negative score",
+    color = "Point density"
+  ) +
+  theme_minimal(base_size = 16)
+
+```
+
+
+
+```{r fig.width = 4.5, fig.height = 3}
+med_pos <- median(CD4$pos_score_CD4, na.rm = TRUE)
+med_neg <- median(CD4$neg_score_CD4, na.rm = TRUE)
+
+# Plot
+ggplot(CD4, aes(x = pos_score_CD4, y = neg_score_CD4)) +
+  geom_pointdensity(alpha = 0.4) + 
+  scale_color_viridis() + 
+  # Median guide lines
+  geom_vline(xintercept = med_pos, linetype = "dashed", color = "orange") +
+  geom_hline(yintercept = med_neg, linetype = "dashed", color = "orange") +
+  labs(
+    title = "CD4+ T", 
+    x = "Positive score",
+    y = "Negative score",
+    color = "Point density"
+  ) +
+  theme_minimal(base_size = 16)
+
+```
+
+## Plot the positive scores for CD8
+
+### Boxplot of all data
+
+```{r fig.width = 6, fig.height = 4}
+table(CD8$cancer_type, CD8$Tissue, useNA = 'ifany')
+
+CD8_sub <- CD8 %>%
+  filter(Tissue %in% c("Blood", "Normal", "Tumor"))
+
+# Step 1: Get cancer_type order by median score in Tumor tissue
+tumor_medians <- CD8_sub %>%
+  filter(Tissue == "Tumor") %>%
+  group_by(cancer_type) %>%
+  summarize(median_score = median(pos_score_CD8, na.rm = TRUE)) %>%
+  arrange(median_score)
+
+tumor_medians
+
+# Step 2: Apply new cancer_type factor levels
+cancer_types_no_tumor = setdiff(unique(CD8_sub$cancer_type), tumor_medians$cancer_type)
+cancer_types_no_tumor
+
+lvls = c(tumor_medians$cancer_type, cancer_types_no_tumor )
+
+CD8_sub$cancer_type <- factor(CD8_sub$cancer_type, levels = lvls)
+
+table(CD8_sub$cancer_type, CD8_sub$Tissue, useNA = 'ifany')
+
+ggplot(CD8_sub, 
+       aes(x = Tissue, y = pos_score_CD8, fill = cancer_type)) +
+  geom_boxplot(
+    aes(group = interaction(Tissue, cancer_type)),
+    width = 0.9,
+    outlier.shape = NA,
+    position = position_dodge2(preserve = "single", width = 1)
+  ) +
+  labs(x = "Tissue", y = "CD8+ T Positive Score", fill = "Cancer Type") + 
+  theme_bw(base_size = 14) + 
+  theme(
+    legend.position = "top",
+    legend.title = element_text(lineheight = 0.8),
+    legend.text = element_text(lineheight = 0.8),
+    legend.key.size = unit(0.8, "lines"),
+    legend.spacing.x = unit(0.5, "cm"),
+    legend.box = "horizontal",
+    legend.box.just = "left"
+  ) +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE))
+```
+
+## Violin plot conditioning on cancer type
+```{r}
+# Filter to target tissues
+CD8_sub <- CD8 %>%
+  filter(Tissue %in% c("Blood", "Normal", "Tumor"))
+
+# Classify cancer types based on tissue presence
+tissue_by_cancer <- CD8_sub %>%
+  distinct(cancer_type, Tissue) %>%
+  group_by(cancer_type) %>%
+  summarize(tissues = paste(sort(unique(Tissue)), collapse = ",")) %>%
+  mutate(group = case_when(
+    grepl("Blood", tissues) & grepl("Tumor", tissues) ~ "has_blood_and_tumor",
+    grepl("Normal", tissues) & grepl("Tumor", tissues) ~ "has_normal_and_tumor",
+    grepl("Blood", tissues) ~ "has_blood_only",
+    TRUE ~ "tumor_only"
+  ))
+
+tissue_by_cancer
+# Merge group assignment into data
+CD8_sub <- left_join(CD8_sub, tissue_by_cancer[, c("cancer_type", "group")], 
+                     by = "cancer_type")
+
+# Set consistent y-axis limits
+y_limits <- range(CD8_sub$pos_score_CD8, na.rm = TRUE)
+
+plot_violin <- function(data) {
+  dodge_width <- 0.75
+  
+  ggplot(data, aes(x = cancer_type, y = pos_score_CD8, fill = Tissue)) +
+    geom_violin(
+      aes(group = interaction(cancer_type, Tissue)),
+      trim = FALSE,
+      alpha = 0.7,
+      scale = "width",  # ensures equal width
+      position = position_dodge(width = dodge_width)
+    ) +
+    geom_boxplot(
+      aes(group = interaction(cancer_type, Tissue)),
+      width = 0.1,
+      outlier.shape = NA,
+      alpha = 0.5,
+      position = position_dodge(width = dodge_width)
+    ) +
+    labs(y = "Positive CD8+ T score", x = NULL) +
+    coord_cartesian(ylim = y_limits) +
+    theme_minimal(base_size = 14) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+
+# Create the 3 plots
+p1 <- plot_violin(CD8_sub %>% filter(group == "has_blood_and_tumor")) + 
+  scale_fill_manual(values = c("Blood" = "#E41A1C",
+                               "Normal" = "#4DAF4A", "Tumor" = "#377EB8"))
+
+p2 <- plot_violin(CD8_sub %>% filter(group == "has_normal_and_tumor")) + 
+  scale_fill_manual(values = c("Blood" = "#E41A1C",
+                               "Normal" = "#4DAF4A", "Tumor" = "#377EB8"))
+
+p3 <- plot_violin(CD8_sub %>% filter(group == "has_blood_only")) + 
+  scale_fill_manual(values = c("Blood" = "#E41A1C",
+                               "Normal" = "#4DAF4A", "Tumor" = "#377EB8"))
+
+p4 <- plot_violin(CD8_sub %>% filter(group == "tumor_only")) + 
+  scale_fill_manual(values = c("Blood" = "#E41A1C",
+                               "Normal" = "#4DAF4A", "Tumor" = "#377EB8"))
+
+```
+
+```{r fig.width = 3.7, fig.height = 2.5}
+p1
+```
+
+```{r fig.width = 2.7, fig.height = 2.5}
+p1 + theme(legend.position = "none")
+```
+
+
+```{r fig.width = 6, fig.height = 2.5}
+p2 + theme(legend.position = "none")
+```
+
+```{r fig.width = 1.2, fig.height = 2.5}
+p3 + theme(legend.position = "none")
+```
+
+```{r fig.width = 1.2, fig.height = 2.5}
+p4 + theme(legend.position = "none")
+```
+
+
+## Plot the positive scores for CD4
+
+### Boxplot of all data
+
+```{r fig.width = 6, fig.height = 4}
+table(CD4$cancer_type, CD4$Tissue, useNA = 'ifany')
+
+CD4_sub <- CD4 %>%
+  filter(Tissue %in% c("Blood", "Normal", "Tumor"))
+
+# Step 1: Get cancer_type order by median score in Tumor tissue
+tumor_medians <- CD4_sub %>%
+  filter(Tissue == "Tumor") %>%
+  group_by(cancer_type) %>%
+  summarize(median_score = median(pos_score_CD4, na.rm = TRUE)) %>%
+  arrange(median_score)
+
+# Step 2: Apply new cancer_type factor levels
+cancer_types_no_tumor = setdiff(unique(CD4_sub$cancer_type), tumor_medians$cancer_type)
+cancer_types_no_tumor
+
+lvls = c(tumor_medians$cancer_type, cancer_types_no_tumor)
+
+CD4_sub$cancer_type <- factor(CD4_sub$cancer_type, levels = lvls)
+
+table(CD4_sub$cancer_type, CD4_sub$Tissue, useNA = 'ifany')
+
+ggplot(CD4_sub, 
+       aes(x = Tissue, y = pos_score_CD4, fill = cancer_type)) +
+  geom_boxplot(
+    aes(group = interaction(Tissue, cancer_type)),
+    width = 0.9,
+    outlier.shape = NA,
+    position = position_dodge2(preserve = "single", width = 1)
+  ) +
+  labs(x = "Tissue", y = "Positive Score (CD4)", fill = "Cancer Type") + 
+  theme_bw(base_size = 14) + 
+  theme(
+    legend.position = "top",
+    legend.title = element_text(lineheight = 0.8),
+    legend.text = element_text(lineheight = 0.8),
+    legend.key.size = unit(0.8, "lines"),
+    legend.spacing.x = unit(0.5, "cm"),
+    legend.box = "horizontal",
+    legend.box.just = "left"
+  ) +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE)) + 
+  coord_cartesian(ylim = c(-2, 3))
+
+```
+
+## Violin plot conditioning on cancer type
+```{r}
+# Filter to target tissues
+CD4_sub <- CD4 %>%
+  filter(Tissue %in% c("Blood", "Normal", "Tumor"))
+
+# Classify cancer types based on tissue presence
+tissue_by_cancer <- CD4_sub %>%
+  distinct(cancer_type, Tissue) %>%
+  group_by(cancer_type) %>%
+  summarize(tissues = paste(sort(unique(Tissue)), collapse = ",")) %>%
+  mutate(group = case_when(
+    grepl("Blood", tissues) & grepl("Tumor", tissues) ~ "has_blood_and_tumor",
+    grepl("Normal", tissues) & grepl("Tumor", tissues) ~ "has_normal_and_tumor",
+    grepl("Blood", tissues) ~ "has_blood_only",
+    TRUE ~ "tumor_only"
+  ))
+
+tissue_by_cancer
+# Merge group assignment into data
+CD4_sub <- left_join(CD4_sub, tissue_by_cancer[, c("cancer_type", "group")], 
+                     by = "cancer_type")
+
+# Set consistent y-axis limits
+y_limits <- range(CD4_sub$pos_score_CD4, na.rm = TRUE)
+
+plot_violin <- function(data) {
+  dodge_width <- 0.75
+  
+  ggplot(data, aes(x = cancer_type, y = pos_score_CD4, fill = Tissue)) +
+    geom_violin(
+      aes(group = interaction(cancer_type, Tissue)),
+      trim = FALSE,
+      alpha = 0.7,
+      scale = "width",  # ensures equal width
+      position = position_dodge(width = dodge_width)
+    ) +
+    geom_boxplot(
+      aes(group = interaction(cancer_type, Tissue)),
+      width = 0.1,
+      outlier.shape = NA,
+      alpha = 0.5,
+      position = position_dodge(width = dodge_width)
+    ) +
+    labs(y = "CD4+ T Positive Score", x = NULL) +
+    coord_cartesian(ylim = y_limits) +
+    theme_minimal(base_size = 14) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+
+# Create the 3 plots
+p1 <- plot_violin(CD4_sub %>% filter(group == "has_blood_and_tumor")) + 
+  scale_fill_manual(values = c("Blood" = "#E41A1C",
+                               "Normal" = "#4DAF4A", "Tumor" = "#377EB8"))
+
+p2 <- plot_violin(CD4_sub %>% filter(group == "has_normal_and_tumor")) + 
+  scale_fill_manual(values = c("Blood" = "#E41A1C",
+                               "Normal" = "#4DAF4A", "Tumor" = "#377EB8"))
+
+p3 <- plot_violin(CD4_sub %>% filter(group == "has_blood_only")) + 
+  scale_fill_manual(values = c("Blood" = "#E41A1C",
+                               "Normal" = "#4DAF4A", "Tumor" = "#377EB8"))
+
+p4 <- plot_violin(CD4_sub %>% filter(group == "tumor_only")) + 
+  scale_fill_manual(values = c("Blood" = "#E41A1C",
+                               "Normal" = "#4DAF4A", "Tumor" = "#377EB8"))
+
+```
+
+```{r fig.width = 3.7, fig.height = 2.5}
+p1
+```
+
+```{r fig.width = 2.7, fig.height = 2.5}
+p1 + theme(legend.position = "none")
+```
+
+
+```{r fig.width = 6, fig.height = 2.5}
+p2 + theme(legend.position = "none")
+```
+
+```{r fig.width = 1.2, fig.height = 2.5}
+p3 + theme(legend.position = "none")
+```
+
+```{r fig.width = 1.2, fig.height = 2.5}
+p4 + theme(legend.position = "none")
+```
+
+
+## save results
+```{r}
+
+CD4[,Patient := paste(study, Patient, sep="_")]
+CD8[,Patient := paste(study, Patient, sep="_")]
+
+fwrite(CD4, "data/CD4_combined.tsv", sep = "\t")
+fwrite(CD8, "data/CD8_combined.tsv", sep = "\t")
+
+system("gzip -f data/CD4_combined.tsv")
+system("gzip -f data/CD8_combined.tsv")
+```
+
+# Session information
+```{r}
+gc()
+
+sessionInfo()
+```
+
+
+
