@@ -1,0 +1,455 @@
+---
+title: "Check results"
+author: "Wei Sun"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: journal
+    highlight: tango
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    number_sections: false
+  df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(width = 80)
+```
+
+# Setup
+
+## Load R libraries
+```{r load_libraries, warning = FALSE, message = FALSE}
+library(data.table)
+library(Matrix)
+library(ggplot2)
+library(ggpubr)
+library(stringr)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggpointdensity)
+
+theme_set(theme_classic())
+
+tcr_dir = "~/research/GitHub/cancer_reactive_TCR/data_TCR/data"
+```
+
+# Read in known cancer reactive TCRs from previous studies
+
+```{r}
+cr_tcr = fread(file.path(tcr_dir, "cancer_reactive_TCRs.tsv"))
+dim(cr_tcr)
+cr_tcr[1:2,]
+
+table(cr_tcr$study, cr_tcr$cell_type)
+table(cr_tcr$study, cr_tcr$antigen_type)
+table(cr_tcr$antigen_type, cr_tcr$cell_type)
+
+
+table(cr_tcr$CDR3A == "", cr_tcr$CDR3B == "")
+cr_tcr = cr_tcr[CDR3A != "" & CDR3B != "",]
+dim(cr_tcr)
+
+table(cr_tcr$study, cr_tcr$cell_type)
+table(cr_tcr$study, cr_tcr$antigen_type)
+table(cr_tcr$antigen_type, cr_tcr$cell_type)
+```
+
+
+## Read in cell meta data
+
+```{r}
+CD4 = fread("data/CD4_combined.tsv.gz")
+CD8 = fread("data/CD8_combined.tsv.gz")
+
+dim(CD4)
+dim(CD8)
+
+CD4[1:2,]
+CD8[1:2,]
+
+table(cr_tcr$CDR3A %in% CD4$TRA_cdr3, cr_tcr$CDR3B %in% CD4$TRB_cdr3)
+table(cr_tcr$CDR3A %in% CD8$TRA_cdr3, cr_tcr$CDR3B %in% CD8$TRB_cdr3)
+
+table(CD4$cancer_type, CD4$study)
+table(CD8$cancer_type, CD8$study)
+
+table(CD4$TRA_cdr3 == "", CD4$TRB_cdr3 == "")
+table(CD8$TRA_cdr3 == "", CD8$TRB_cdr3 == "")
+
+table(CD4$TRA_v_gene == "", CD4$TRB_v_gene == "")
+table(CD8$TRA_v_gene == "", CD8$TRB_v_gene == "")
+
+table(CD8$cancer_reactive_per_cell, CD8$study_specific_CR_by_cluster)
+table(CD4$cancer_reactive_per_cell, CD4$study_specific_CR_by_cluster)
+
+CD8[,cancer_reactive := cancer_reactive_per_cell & study_specific_CR_by_cluster]
+CD4[,cancer_reactive := cancer_reactive_per_cell & study_specific_CR_by_cluster]
+
+```
+
+## Annotated clones
+
+here we define TCR clone using V gene and CDR3
+
+```{r}
+summarize_clones <- function(df) {
+  dt <- as.data.table(df)
+
+  # Ensure clone identifier exists
+  if (!"clone" %in% names(dt)) {
+    dt[, clone := paste(TRA_v_gene, TRA_cdr3,
+                        TRB_v_gene, TRB_cdr3, sep = "_")]
+  }
+
+  # Total number of cells per patient
+  dt[, total_cells_patient := .N, by = Patient]
+
+  # Number of cells per clone per patient
+  dt[, clone_number_per_patient := .N, by = .(Patient, clone)]
+
+  # Total number of cells per clone
+  dt[, clone_number_total := .N, by = clone]
+
+  # Number of patients per clone
+  clone_patient_counts <- unique(dt[, .(clone, Patient)])[, .N, by = clone]
+  setnames(clone_patient_counts, "N", "clone_n_patient")
+  dt <- merge(dt, clone_patient_counts, by = "clone", all.x = TRUE)
+
+  # Number of cells per clone and patient
+  clone_patient_tbl <- dt[, .(clone, Patient)][, .N, by = .(clone, Patient)]
+  clone_patient_tbl[, clone_number_per_patient_median := median(N), by = clone]
+  clone_patient_tbl = unique(clone_patient_tbl[, .(clone, clone_number_per_patient_median)])
+  dt <- merge(dt, clone_patient_tbl, by = "clone", all.x = TRUE)
+
+  # Clone frequency within each patient
+  dt[, clone_freq_per_patient := clone_number_per_patient / total_cells_patient]
+
+  # Summarize per clone
+  summary_dt <- dt[, .(
+    clone_number_per_patient_min = min(clone_number_per_patient),
+    clone_number_per_patient_max = max(clone_number_per_patient),
+    # only one number and thus we can take max
+    clone_number_per_patient_median = max(clone_number_per_patient_median),
+    clone_freq_per_patient_min = min(clone_freq_per_patient),
+    clone_freq_per_patient_max = max(clone_freq_per_patient),
+    clone_number_total = max(clone_number_total),
+    clone_n_patient = max(clone_n_patient)
+  ), by = clone]
+
+  # Sort by total number of cells with the clone
+  setorder(summary_dt, -clone_n_patient)
+
+  return(list(dt=dt, summary_dt=summary_dt))
+}
+
+s1 <- summarize_clones(CD4)
+s2 <- summarize_clones(CD8)
+
+CD4_annotated = s1$dt
+CD4_TCR = s1$summary_dt
+
+CD8_annotated = s2$dt
+CD8_TCR = s2$summary_dt
+
+dim(CD4_annotated)
+dim(CD4_TCR)
+
+dim(CD8_annotated)
+dim(CD8_TCR)
+
+CD8_sub <- CD8_annotated[!is.na(study_clone_number)]
+CD8_sub[1:2,]
+
+# Scatter plot with point density
+ggplot(CD8_sub, aes(x = study_clone_number, y = clone_number_per_patient)) +
+  geom_pointdensity(adjust = 1) +
+  scale_color_viridis_c() +
+  labs(
+    x = "Study Clone Number",
+    y = "Clone Size Within Patient",
+    color = "Density",
+    title = "Clone Size vs. Study Clone Number (Density Colored)"
+  ) +
+  theme_bw()
+
+CD8_TCR[1:5,]
+CD4_TCR[1:5,]
+
+summary(CD4_TCR$clone_n_patient)
+summary(CD8_TCR$clone_n_patient)
+
+table(CD4_TCR$clone_n_patient > 1)
+table(CD4_TCR$clone_n_patient > 2)
+table(CD4_TCR$clone_n_patient > 5)
+
+table(CD8_TCR$clone_n_patient > 1)
+table(CD8_TCR$clone_n_patient > 2)
+table(CD8_TCR$clone_n_patient > 5)
+
+rm(CD4)
+rm(CD8)
+```
+
+
+## VDJdb
+
+Filter out TCRs appear in VDJdb and it is associated with non-human antigen
+```{r fig.width = 2.5, fig.height = 2.5}
+vdj_path = "~/research/GitHub/cancer_reactive_TCR/data_VDJdb"
+slim = fread(file.path(vdj_path, "vdjdb-2025-02-21/vdjdb.slim.txt"))
+dim(slim)
+table(slim$species)
+
+slim = slim[species == "HomoSapiens", ]
+dim(slim)
+slim[1:2,]
+
+table(slim$vdjdb.score)
+tb1 = table(slim$v.segm)
+length(tb1)
+
+sort(tb1, decreasing = TRUE)[1:20]
+sort(table(CD8_annotated$TRA_v_gene), decreasing = TRUE)[1:20]
+sort(table(CD8_annotated$TRB_v_gene), decreasing = TRUE)[1:20]
+
+slim[, v_gene := sub("\\*.*", "", v.segm)]
+
+vdjdb = slim[vdjdb.score >= 2, ]
+dim(vdjdb)
+
+table(vdjdb$v_gene %in% CD8_annotated$TRA_v_gene, 
+      vdjdb$v_gene %in% CD8_annotated$TRB_v_gene)
+
+annotate_tcr_with_vdjdb <- function(tcr_df, vdjdb) {
+  dt <- as.data.table(tcr_df)
+  
+  # Prepare VDJdb subsets
+  vdjdb_alpha <- vdjdb[gene == "TRA", .(cdr3, v_gene, antigen.species)]
+  vdjdb_beta  <- vdjdb[gene == "TRB", .(cdr3, v_gene, antigen.species)]
+
+  vdjdb_alpha <- vdjdb_alpha[, .(
+  antigen_species = paste(unique(antigen.species), collapse = ",")), 
+  by = .(cdr3, v_gene)]
+
+  vdjdb_beta <- vdjdb_beta[, .(
+  antigen_species = paste(unique(antigen.species), collapse = ",")), 
+  by = .(cdr3, v_gene)]
+
+  # Alpha chain annotation
+  dt <- merge(
+    dt,
+    vdjdb_alpha,
+    by.x = c("TRA_cdr3", "TRA_v_gene"),
+    by.y = c("cdr3", "v_gene"),
+    all.x = TRUE,
+    suffixes = c("", "_vdjdb_alpha")
+  )
+  
+  setnames(dt, c("antigen_species"), c("TRA_antigen"))
+
+  # Beta chain annotation
+  dt <- merge(
+    dt,
+    vdjdb_beta,
+    by.x = c("TRB_cdr3", "TRB_v_gene"),
+    by.y = c("cdr3", "v_gene"),
+    all.x = TRUE,
+    suffixes = c("", "_vdjdb_beta")
+  )
+  
+  setnames(dt, c("antigen_species"), c("TRB_antigen"))
+
+  return(dt)
+}
+
+CD8 <- annotate_tcr_with_vdjdb(CD8_annotated, vdjdb)
+CD4 <- annotate_tcr_with_vdjdb(CD4_annotated, vdjdb)
+
+dim(CD8)
+CD8[1:2,]
+
+table(is.na(CD8$TRA_antigen))
+table(is.na(CD4$TRA_antigen))
+
+sort(table(CD8$TRA_antigen), decreasing = TRUE)[1:10]
+sort(table(CD8$TRB_antigen), decreasing = TRUE)[1:10]
+
+CD8[(!is.na(TRA_antigen)) & TRA_antigen != "HomoSapiens", TRA_antigen := "non-human"]
+CD8[(!is.na(TRB_antigen)) & TRB_antigen != "HomoSapiens", TRB_antigen := "non-human"]
+
+CD4[(!is.na(TRA_antigen)) & TRA_antigen != "HomoSapiens", TRA_antigen := "non-human"]
+CD4[(!is.na(TRB_antigen)) & TRB_antigen != "HomoSapiens", TRB_antigen := "non-human"]
+
+table(CD8$TRA_antigen, CD8$TRB_antigen, useNA = 'ifany')
+
+add_non_human_antigen <- function(df, tra = "TRA_antigen", trb = "TRB_antigen") {
+  df %>%
+    mutate(non_human_antigen = case_when(
+      .data[[tra]] == "non-human" & .data[[trb]] == "non-human" ~ "Both",
+      .data[[tra]] == "non-human" & (is.na(.data[[trb]]) | .data[[trb]] == "HomoSapiens") ~ "TRA",
+      .data[[trb]] == "non-human" & (is.na(.data[[tra]]) | .data[[tra]] == "HomoSapiens") ~ "TRB",
+      TRUE ~ "None"
+    ))
+}
+
+CD8 <- add_non_human_antigen(CD8)
+CD4 <- add_non_human_antigen(CD4)
+
+
+draw_bar_plot <- function(df1, cr_column = "cancer_reactive_per_cell"){
+  df = data.frame(table(df1$non_human_antigen, df1[[cr_column]], useNA = 'ifany'))
+  names(df) = c("non_human_antigen", "cancer_reactive", "count")
+  
+  df_wide <- df %>%
+    tidyr::pivot_wider(names_from = cancer_reactive, values_from = count, values_fill = 0) %>%
+    mutate(
+      total = `TRUE` + `FALSE`,
+      proportion_true = `TRUE` / total
+    )
+  df_wide$non_human_antigen <- factor(df_wide$non_human_antigen, 
+                                      levels = c("Both", "TRB", "TRA", "None"))
+
+  # Plot
+  g1 = ggplot(df_wide, aes(x = non_human_antigen, y = proportion_true)) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    labs(
+      x = "Antigen Category",
+      y = "Prop of Cancer Reactive",
+      title = gsub("_", " ", cr_column)
+    ) +
+    theme_minimal()
+  print(df_wide)
+  print(g1)
+}
+
+
+draw_bar_plot(CD8,  "cancer_reactive_per_cell")
+draw_bar_plot(CD8,  "cancer_reactive")
+
+draw_bar_plot(CD4,  "cancer_reactive_per_cell")
+draw_bar_plot(CD4,  "cancer_reactive")
+
+```
+
+## Filter out cells whose TCR (both alpha and beta) match with those that have non-human antigens. 
+
+```{r}
+
+dim(CD8)
+dim(CD4)
+
+CD8 = CD8[non_human_antigen != "Both",]
+CD4 = CD4[non_human_antigen != "Both",]
+
+dim(CD8)
+dim(CD4)
+
+CD8[1:2,]
+CD4[1:2,]
+
+compute_odds <- function(df, 
+                         reactive_col = "cancer_reactive", 
+                         clone_size_col = "clone_number_total", 
+                         k_max = 20) {
+  dt <- as.data.table(df)
+
+  # Ensure logical column
+  if (!is.logical(dt[[reactive_col]])) {
+    stop(paste("Column", reactive_col, "must be logical (TRUE/FALSE)"))
+  }
+
+  results <- data.table(k = integer(), odds_ratio = numeric(), 
+                        p_value = numeric(), 
+                        n_diag = numeric(), 
+                        n_TCR = numeric())
+
+  for (k in 1:k_max) {
+    tbl <- table(dt[[reactive_col]], dt[[clone_size_col]] > k & dt$clone_freq_per_patient > 0.001)
+
+    if (all(dim(tbl) == c(2, 2))) {
+      test <- fisher.test(tbl)
+      results <- rbind(
+        results,
+        data.table(
+          k = k,
+          odds_ratio = as.numeric(test$estimate),
+          p_value = test$p.value, 
+          n_diag = tbl[1,1] + tbl[2,2], 
+          n_TCR = tbl[2,2]
+        )
+      )
+    }
+  }
+
+  return(results)
+}
+
+
+compute_odds(CD8)
+compute_odds(CD8, clone_size_col = "clone_number_per_patient")
+
+compute_odds(CD4)
+compute_odds(CD4, clone_size_col = "clone_number_per_patient")
+
+
+table(CD8$cancer_reactive, CD8$clone_number_per_patient > 2 & CD8$clone_freq_per_patient > 0.001)
+table(CD8$cancer_reactive, CD8$clone_number_per_patient > 5 & CD8$clone_freq_per_patient > 0.001)
+
+table(CD4$cancer_reactive, CD4$clone_number_per_patient > 2 & CD4$clone_freq_per_patient > 0.001)
+table(CD4$cancer_reactive, CD4$clone_number_per_patient > 5 & CD4$clone_freq_per_patient > 0.001)
+
+add_label <- function(df){
+  df %>%
+    mutate(label = case_when(
+      .data[["cancer_reactive"]]  & 
+        .data[["clone_number_per_patient"]] > 2 & 
+        .data[["clone_freq_per_patient"]] > 0.001 ~ "1",
+      (! .data[["cancer_reactive"]]) & (! .data[["study_specific_CR_by_cluster"]]) ~ "0",
+      TRUE ~ "unknown"
+    ))}
+
+CD8 = add_label(CD8)
+CD4 = add_label(CD4)
+
+table(CD8$cancer_reactive, CD8$study_specific_CR_by_cluster)
+table(CD4$cancer_reactive, CD4$study_specific_CR_by_cluster)
+
+table(CD8$label)
+table(CD4$label)
+
+```
+
+## Save results
+```{r}
+
+CD8 = CD8[label != "unknown",]
+CD4 = CD4[label != "unknown",]
+
+dim(CD8)
+dim(CD4)
+
+CD8[1:2,]
+CD4[1:2,]
+
+fwrite(CD4, "data/CD4_updated.tsv", sep = "\t")
+fwrite(CD8, "data/CD8_updated.tsv", sep = "\t")
+
+system("gzip -f data/CD4_updated.tsv")
+system("gzip -f data/CD8_updated.tsv")
+```
+
+# Session information
+```{r}
+gc()
+
+sessionInfo()
+```
+
+
+

@@ -1,4 +1,4 @@
-This folder contains code to process Chen_2024 study data.
+This folder contains code to process Liu 2025 study data: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE243013.
 
 ### The python file ``process_all_data.py`` calculates cancer reactive score (e.g., mean value or ssGSEA enrichment) for each cell. The output will be written in output_CD4.csv and output_CD8.csv.
 

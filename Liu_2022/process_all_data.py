@@ -81,6 +81,7 @@ print(adata.obs["celltype"].value_counts(dropna=False))
 adata = adata[adata.obs["celltype"].isin(t_cell_types)]
 sc.pp.calculate_qc_metrics(adata, inplace=True)
 
+#%%
 # filter adata by read depth
 print(adata.shape)
 # Summarize percentiles and min/max for adata
@@ -101,17 +102,47 @@ print(f"Percentage of cells with counts > {max_rd}: {100 * high_count / total_ce
 adata = adata[(adata.obs['total_counts'] >= min_rd) & (adata.obs['total_counts'] <= max_rd)]
 print(adata.shape)
 
-sc.pp.normalize_total(adata, target_sum=target_rd)
-sc.pp.log1p(adata)  # log transform
-
-
 adata_all_CD4 = adata[adata.obs["celltype"]=='CD4']
 adata_all_CD8 = adata[adata.obs["celltype"]=='CD8']
 
-del(adata)
+print(adata_all_CD8.X[:3, :3].toarray())
+
+#%% Save the filtered data
+
+import scipy.io
+import subprocess
+
+os.makedirs("Liu_2022_CD4", exist_ok=True)
+os.makedirs("Liu_2022_CD8", exist_ok=True)
+
+scipy.io.mmwrite("Liu_2022_CD4/matrix.mtx", adata_all_CD4.X)
+scipy.io.mmwrite("Liu_2022_CD8/matrix.mtx", adata_all_CD8.X)
+
+subprocess.run(["gzip", "-f", "Liu_2022_CD4/matrix.mtx"])
+subprocess.run(["gzip", "-f", "Liu_2022_CD8/matrix.mtx"])
+
+# Save gene names (variables)
+adata_all_CD4.var_names.to_series().to_csv("Liu_2022_CD4/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.var_names.to_series().to_csv("Liu_2022_CD8/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+
+# Save cell names (observations)
+adata_all_CD4.obs_names.to_series().to_csv("Liu_2022_CD4/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.obs_names.to_series().to_csv("Liu_2022_CD8/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
+
+del adata  # Free memory
+
+#%% 
+sc.pp.normalize_total(adata_all_CD4, target_sum=target_rd)
+sc.pp.log1p(adata_all_CD4)  # log transform
+
+sc.pp.normalize_total(adata_all_CD8, target_sum=target_rd)
+sc.pp.log1p(adata_all_CD8)  # log transform
 
 #%% CD8
-
 adata = adata_all_CD8.copy()
 print(adata)
 sets_ave = ["Hanada_pos_27g", "Oliveira_virus_26g", "Hanada_neg_5g"]
@@ -170,7 +201,8 @@ final_df_CD8 = pd.concat([final_df_CD8, df_combined], ignore_index=False)
 del(adata)
 del(adata_all_CD8)
 
-#############################CD4############################
+#%% CD4
+
 adata = adata_all_CD4.copy()
 del(adata_all_CD4)
 print(adata)

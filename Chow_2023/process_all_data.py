@@ -1,3 +1,4 @@
+#%%
 import os
 import pandas as pd
 import scanpy as sc
@@ -12,6 +13,19 @@ min_rd = 500
 max_rd = 20000
 
 adata = sc.read_h5ad("GSE212217_all_samples_with_metadata.h5ad")
+
+X_dense = adata.X[:10,].toarray()
+is_integer = np.all(np.equal(np.mod(X_dense, 1), 0))
+print("are the data matrix values integers? ", is_integer)
+
+# Print out columns with the largest column sum
+col_sums = X_dense.sum(axis=0)
+top_indices = np.argsort(col_sums)[-10:][::-1]  # Indices of top 10 columns by sum
+print("Indices of columns with largest sums:", top_indices)
+print("Column sums:", col_sums[top_indices])
+print("Values in those columns:\n", X_dense[:, top_indices])
+
+#%%
 
 with open("signatures_CD8.pkl", "rb") as f:
     sigs_CD8 = pickle.load(f)
@@ -84,8 +98,7 @@ print(f"Percentage of cells with counts > {max_rd}: {100 * high_count / total_ce
 # Filter cells with total_counts < min_rd or > max_rd
 adata = adata[(adata.obs['total_counts'] >= min_rd) & (adata.obs['total_counts'] <= max_rd)]
 
-sc.pp.normalize_total(adata, target_sum=target_rd)
-sc.pp.log1p(adata)  # log transform
+#%%
 
 with pd.option_context('display.max_columns', None):
     print(adata.obs)
@@ -93,10 +106,41 @@ with pd.option_context('display.max_columns', None):
 adata_all_CD4 = adata[adata.obs["finalIdent"].isin(t_cell['CD4'])]
 adata_all_CD8 = adata[adata.obs["finalIdent"].isin(t_cell['CD8'])]
 
+
 adata_all_CD4
 adata_all_CD8
 
+print(adata_all_CD8.X[:3, :3].toarray())
+import scipy.io
+import subprocess
+
+scipy.io.mmwrite("Chow_2023_CD4/matrix.mtx", adata_all_CD4.X)
+scipy.io.mmwrite("Chow_2023_CD8/matrix.mtx", adata_all_CD8.X)
+
+subprocess.run(["gzip", "-f", "Chow_2023_CD4/matrix.mtx"])
+subprocess.run(["gzip", "-f", "Chow_2023_CD8/matrix.mtx"])
+
+# Save gene names (variables)
+adata_all_CD4.var_names.to_series().to_csv("Chow_2023_CD4/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.var_names.to_series().to_csv("Chow_2023_CD8/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+
+# Save cell names (observations)
+adata_all_CD4.obs_names.to_series().to_csv("Chow_2023_CD4/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.obs_names.to_series().to_csv("Chow_2023_CD8/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
+
 del adata  # Free memory
+
+#%%
+sc.pp.normalize_total(adata_all_CD4, target_sum=target_rd)
+sc.pp.log1p(adata_all_CD4)  # log transform
+
+sc.pp.normalize_total(adata_all_CD8, target_sum=target_rd)
+sc.pp.log1p(adata_all_CD8)  # log transform
+
 
 for lib in t_cell['CD8']:
     print(lib)

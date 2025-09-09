@@ -42,7 +42,6 @@ cd4t_cells = metadata[
 print(f"CD8T cells: {cd8t_cells.shape[0]}")
 print(f"CD4T cells: {cd4t_cells.shape[0]}")
 
-# %%
 print(metadata.head())
 
 # %%
@@ -71,8 +70,6 @@ features.head()
 # %%
 X = scipy.io.mmread("GSE243013_NSCLC_immune_scRNA_counts.mtx.gz").tocsr()
 print(X.shape)
-
-# %%
 
 # Set feature names (row names)
 var = pd.DataFrame(index=features['geneSymbol'].tolist())
@@ -174,15 +171,48 @@ print(f"Percentage of cells with counts > {max_rd}: {100 * high_count / total_ce
 # Filter cells with total_counts < min_rd or > max_rd
 adata = adata[(adata.obs['total_counts'] >= min_rd) & (adata.obs['total_counts'] <= max_rd)]
 
-sc.pp.normalize_total(adata, target_sum=target_rd)
-sc.pp.log1p(adata)  # log transform
-
 # %%
 adata_all_CD4 = adata[adata.obs["sub_cell_type"].isin(t_cell['CD4'])]
 adata_all_CD8 = adata[adata.obs["sub_cell_type"].isin(t_cell['CD8'])]
 
 print(f"CD4T cells: {adata_all_CD4.shape[0]}")
 print(f"CD8T cells: {adata_all_CD8.shape[0]}")
+
+print(adata_all_CD8.X[:3, :3].toarray())
+
+#%% Save the filtered data
+import scipy.io
+import subprocess
+
+os.makedirs("Liu_2025_CD4", exist_ok=True)
+os.makedirs("Liu_2025_CD8", exist_ok=True)
+
+scipy.io.mmwrite("Liu_2025_CD4/matrix.mtx", adata_all_CD4.X)
+scipy.io.mmwrite("Liu_2025_CD8/matrix.mtx", adata_all_CD8.X)
+
+subprocess.run(["gzip", "-f", "Liu_2025_CD4/matrix.mtx"])
+subprocess.run(["gzip", "-f", "Liu_2025_CD8/matrix.mtx"])
+
+# Save gene names (variables)
+adata_all_CD4.var_names.to_series().to_csv("Liu_2025_CD4/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.var_names.to_series().to_csv("Liu_2025_CD8/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+
+# Save cell names (observations)
+adata_all_CD4.obs_names.to_series().to_csv("Liu_2025_CD4/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.obs_names.to_series().to_csv("Liu_2025_CD8/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
+del adata  # Free memory
+
+#%% 
+sc.pp.normalize_total(adata_all_CD4, target_sum=target_rd)
+sc.pp.log1p(adata_all_CD4)  # log transform
+
+sc.pp.normalize_total(adata_all_CD8, target_sum=target_rd)
+sc.pp.log1p(adata_all_CD8)  # log transform
+
 
 # %%
 final_df_CD8 = pd.DataFrame()

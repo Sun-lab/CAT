@@ -1,8 +1,10 @@
+# %%
 import os
 import pandas as pd
 import scanpy as sc
 import numpy as np
 
+# %%
 # set target read depth for normalization
 target_rd = 3000
 
@@ -43,6 +45,7 @@ adata.var["feature_type"] = features["feature_type"].values
 
 adata
 
+#%%
 import pickle
 
 with open("signatures_CD8.pkl", "rb") as f:
@@ -62,6 +65,7 @@ metadata = pd.read_csv("GSE236581_CRC-ICB_metadata.txt.gz", compression='gzip', 
 metadata.shape
 metadata.head(3)
 
+#%%
 def average_genes(genes_list, df):
     valid_genes = [g for g in genes_list if g in df.columns]
     if len(valid_genes) == 0:
@@ -140,20 +144,51 @@ total_cells = adata.shape[0]
 print(f"Percentage of cells with counts < {min_rd}: {100 * low_count / total_cells:.2f}%")
 print(f"Percentage of cells with counts > {max_rd}: {100 * high_count / total_cells:.2f}%")
 
+#%%
+
 # Filter cells with total_counts < min_rd or > max_rd
 adata = adata[(adata.obs['total_counts'] >= min_rd) & (adata.obs['total_counts'] <= max_rd)]
-
-sc.pp.normalize_total(adata, target_sum=target_rd)
-sc.pp.log1p(adata)  # log transform
 
 adata_all_CD4 = adata[adata.obs["SubCellType"].isin(t_cell['CD4'])]
 adata_all_CD8 = adata[adata.obs["SubCellType"].isin(t_cell['CD8'])]
 
+
 adata_all_CD4
 adata_all_CD8
 
+print(adata_all_CD8.X[:3, :3].toarray())
+
+import scipy.io
+import subprocess
+
+scipy.io.mmwrite("Chen_2024_CD4/matrix.mtx", adata_all_CD4.X)
+scipy.io.mmwrite("Chen_2024_CD8/matrix.mtx", adata_all_CD8.X)
+
+subprocess.run(["gzip", "-f", "Chen_2024_CD4/matrix.mtx"])
+subprocess.run(["gzip", "-f", "Chen_2024_CD8/matrix.mtx"])
+
+# Save gene names (variables)
+adata_all_CD4.var_names.to_series().to_csv("Chen_2024_CD4/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.var_names.to_series().to_csv("Chen_2024_CD8/genes.tsv", 
+                                           sep='\t', index=False, header=False)
+
+# Save cell names (observations)
+adata_all_CD4.obs_names.to_series().to_csv("Chen_2024_CD4/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
+adata_all_CD8.obs_names.to_series().to_csv("Chen_2024_CD8/barcodes.tsv", 
+                                           sep='\t', index=False, header=False)
+
 del adata  # Free memory
 
+#%%
+sc.pp.normalize_total(adata_all_CD4, target_sum=target_rd)
+sc.pp.log1p(adata_all_CD4)  # log transform
+
+sc.pp.normalize_total(adata_all_CD8, target_sum=target_rd)
+sc.pp.log1p(adata_all_CD8)  # log transform
+
+#%%
 for lib in t_cell['CD8']:
     print(lib)
     adata = adata_all_CD8[adata_all_CD8.obs["SubCellType"]==lib]
