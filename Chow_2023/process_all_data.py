@@ -12,7 +12,14 @@ target_rd = 3000
 min_rd = 500
 max_rd = 20000
 
+genes2use = pd.read_csv("../data/common_genes.txt", header=None)[0].tolist()
+print(f"Number of common genes: {len(genes2use)}")
+genes2use[:5]
+
 adata = sc.read_h5ad("GSE212217_all_samples_with_metadata.h5ad")
+
+adata.var_names_make_unique()
+adata.var["gene_name"] = adata.var_names
 
 X_dense = adata.X[:10,].toarray()
 is_integer = np.all(np.equal(np.mod(X_dense, 1), 0))
@@ -25,14 +32,22 @@ print("Indices of columns with largest sums:", top_indices)
 print("Column sums:", col_sums[top_indices])
 print("Values in those columns:\n", X_dense[:, top_indices])
 
+
+#%%
+# Filter to keep only genes in genes2use
+print(f"Original number of genes: {adata.n_vars}")
+adata = adata[:, adata.var['gene_name'].isin(genes2use)]
+adata
+print(f"Number of genes after filtering to common genes: {adata.n_vars}")
+
 #%%
 
-with open("signatures_CD8.pkl", "rb") as f:
+with open("../data/signatures_CD8.pkl", "rb") as f:
     sigs_CD8 = pickle.load(f)
 
 print({k: len(v) for k, v in sigs_CD8.items()})
 
-with open("signatures_CD4.pkl", "rb") as f:
+with open("../data/signatures_CD4.pkl", "rb") as f:
     sigs_CD4 = pickle.load(f)
 
 print({k: len(v) for k, v in sigs_CD4.items()})
@@ -76,8 +91,6 @@ final_df_CD4 = pd.DataFrame()
 t_cell = {"CD4":['CD4 Activated', 'CD4 Naive', 'Treg'], 
           'CD8':['CD8 Activated', 'CD8 Naive', 'CD8 Exhausted']}
 
-adata.var_names_make_unique()
-adata.var["gene_name"] = adata.var_names
 
 sc.pp.calculate_qc_metrics(adata, inplace=True)
 
@@ -111,6 +124,7 @@ adata_all_CD4
 adata_all_CD8
 
 print(adata_all_CD8.X[:3, :3].toarray())
+
 import scipy.io
 import subprocess
 

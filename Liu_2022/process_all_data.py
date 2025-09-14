@@ -8,6 +8,10 @@ target_rd = 3000
 min_rd = 500
 max_rd = 20000
 
+genes2use = pd.read_csv("../data/common_genes.txt", header=None)[0].tolist()
+print(f"Number of common genes: {len(genes2use)}")
+genes2use[:5]
+
 #%%
 
 metadata_df = pd.read_csv("GSE179994_Tcell.metadata.tsv.gz", sep="\t", compression="gzip")
@@ -26,14 +30,22 @@ adata.obs.index.name = 'cellid'
 
 adata.obs = adata.obs.join(metadata_df, how='left')
 
+#%%
+print(f"Original number of genes: {adata.n_vars}")
+adata = adata[:, adata.var_names.isin(genes2use)]
+adata
+print(f"Number of genes after filtering to common genes: {adata.n_vars}")
+
+
+#%%
 import pickle
 
-with open("signatures_CD8.pkl", "rb") as f:
+with open("../data/signatures_CD8.pkl", "rb") as f:
     sigs_CD8 = pickle.load(f)
 
 print({k: len(v) for k, v in sigs_CD8.items()})
 
-with open("signatures_CD4.pkl", "rb") as f:
+with open("../data/signatures_CD4.pkl", "rb") as f:
     sigs_CD4 = pickle.load(f)
 
 print({k: len(v) for k, v in sigs_CD4.items()})

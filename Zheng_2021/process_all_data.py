@@ -1,3 +1,4 @@
+#%%
 import os
 import glob
 import pandas as pd
@@ -12,6 +13,11 @@ target_rd = 3000
 min_rd = 500
 max_rd = 20000
 
+genes2use = pd.read_csv("../data/common_genes.txt", header=None)[0].tolist()
+print(f"Number of common genes: {len(genes2use)}")
+genes2use[:5]
+
+#%%
 
 DATA_DIR = "GSE156728"
 
@@ -26,12 +32,12 @@ meta.head()
 
 import pickle
 
-with open("signatures_CD8.pkl", "rb") as f:
+with open("../data/signatures_CD8.pkl", "rb") as f:
     sigs_CD8 = pickle.load(f)
 
 print({k: len(v) for k, v in sigs_CD8.items()})
 
-with open("signatures_CD4.pkl", "rb") as f:
+with open("../data/signatures_CD4.pkl", "rb") as f:
     sigs_CD4 = pickle.load(f)
 
 print({k: len(v) for k, v in sigs_CD4.items()})
@@ -71,14 +77,21 @@ final_df_CD8 = pd.DataFrame()
 final_df_CD4 = pd.DataFrame()
 l = ['BC','BCL','ESCA','MM','PACA','RC','THCA','UCEC','OV','FTC']
 
+#%%
 for i in l:
+    print("Processing dataset:", i)
     df_path = glob.glob(os.path.join(DATA_DIR, f"*{i}_10X.CD8.counts.txt.gz"))[0]
     df = read_table(df_path)
     adata = sc.AnnData(df.T)
     # Check whether adata.obs.index is a subset of meta['cellID']
-    assert(set(adata.obs.index).issubset(set(meta.index)))
     
+    print(f"Original number of genes: {adata.n_vars}")
+    adata = adata[:, adata.var.index.isin(genes2use)]
+    print(f"Number of genes after filtering to common genes: {adata.n_vars}")
+
     sc.pp.calculate_qc_metrics(adata, inplace=True)
+    
+    assert(set(adata.obs.index).issubset(set(meta.index)))
     adata.obs = adata.obs.join(meta)
     
     new_index = [bc + f"-{i}" for bc in adata.obs.index]
@@ -153,16 +166,20 @@ for i in l:
     df_combined = df_wide.join(signature_df, how="inner")
     final_df_CD8 = pd.concat([final_df_CD8, df_combined], ignore_index=False)
 
+#%%
 for i in l:
+    print("Processing dataset:", i)
+
     df_path = glob.glob(os.path.join(DATA_DIR, f"*{i}_10X.CD4.counts.txt.gz"))[0]
     df = read_table(df_path)
     adata = sc.AnnData(df.T)
-    print(adata)
-    sc.pp.calculate_qc_metrics(adata, inplace=True)
+    print(f"Original number of genes: {adata.n_vars}")
+    adata = adata[:, adata.var.index.isin(genes2use)]
+    print(f"Number of genes after filtering to common genes: {adata.n_vars}")
     
+    sc.pp.calculate_qc_metrics(adata, inplace=True)
+
     assert(set(adata.obs.index).issubset(set(meta.index)))
-    
-    sc.pp.calculate_qc_metrics(adata, inplace=True)
     adata.obs = adata.obs.join(meta)
     
     new_index = [bc + f"-{i}" for bc in adata.obs.index]
@@ -237,3 +254,5 @@ for i in l:
 
 final_df_CD4.to_csv('output_CD4.csv',index = True)
 final_df_CD8.to_csv('output_CD8.csv',index = True)
+
+# %%

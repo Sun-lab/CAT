@@ -12,6 +12,11 @@ target_rd = 3000
 min_rd = 500
 max_rd = 20000
 
+genes2use = pd.read_csv("../data/common_genes.txt", header=None)[0].tolist()
+print(f"Number of common genes: {len(genes2use)}")
+genes2use[:5]
+
+# %%
 features = pd.read_csv("GSE236581_features.tsv.gz", compression='gzip', sep='\t', header=None)
 barcodes = pd.read_csv("GSE236581_barcodes.tsv.gz", compression='gzip', header=None)
 features.head(3)
@@ -46,14 +51,19 @@ adata.var["feature_type"] = features["feature_type"].values
 adata
 
 #%%
+# Filter to keep only genes in genes2use
+adata = adata[:, adata.var['gene_name'].isin(genes2use)]
+adata
+
+#%%
 import pickle
 
-with open("signatures_CD8.pkl", "rb") as f:
+with open("../data/signatures_CD8.pkl", "rb") as f:
     sigs_CD8 = pickle.load(f)
 
 print({k: len(v) for k, v in sigs_CD8.items()})
 
-with open("signatures_CD4.pkl", "rb") as f:
+with open("../data/signatures_CD4.pkl", "rb") as f:
     sigs_CD4 = pickle.load(f)
 
 print({k: len(v) for k, v in sigs_CD4.items()})
