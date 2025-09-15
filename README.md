@@ -19,6 +19,10 @@ conda activate CAT
 conda install -c conda-forge pandas numpy scanpy anndata seaborn matplotlib
 conda install -c conda-forge python-igraph leidenalg
 ```
+
+First run ```zz0_get_common_gene_set.ipynb``` to get the common set of genes to be used, and then run the codes within each study-specific folder. Typically to run ```process_all_data.py``` followed by ```process_output.ipynb```. Finally run ```zz1_prepare_data.Rmd``` and ```zz2_construct_training_data.Rmd``` in this folder. 
+
+
 ## To run on the Fred Hutch Cluster, first
 ```
 grabnode

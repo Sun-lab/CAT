@@ -629,7 +629,6 @@ dim(CD8_p)
 table(CD4_p$cancer_type)
 table(CD8_p$cancer_type)
 
-
 cd4_counts <- c(Blood = 148723, Normal = 37744, Tumor = 308408)
 cd8_counts <- c(Blood = 96205, Normal = 52873, Tumor = 326080)
 
@@ -662,6 +661,7 @@ ggplot(df, aes(x = Tissue, y = Count_k, fill = CellType)) +
 ## Classify cells as cancer reactive
 
 ```{r}
+
 pos_sigs_CD8 = c("CD8_Lowery_pos_243g", 
                  "CD8_Oliveira_TTE_100g", "CD8_Oliveira_pos_74g", 
                  "CD8_Yost_CD8_Exh_100g", "CD8_ave_Hanada_pos_27g")
@@ -673,7 +673,8 @@ pos_sigs_CD4 = c("CD4_ave_Hanada_pos_9g", "CD4_Caushi_Tfh2_66g",
 
 neg_sigs_CD4 = c("CD4_Lowery_neg_37g", "CD4_ave_Hanada_neg_4g")
 
-classify_cells <- function(df, cell_type, pos_sigs, neg_sigs) {
+classify_cells <- function(df1, cell_type, pos_sigs, neg_sigs) {
+  df = copy(df1)
   # Combine all signature columns
   cols <- c(pos_sigs, neg_sigs)
 
@@ -698,8 +699,26 @@ classify_cells <- function(df, cell_type, pos_sigs, neg_sigs) {
   return(list(df = df, pos_cut = pos_cut, neg_cut = neg_cut))
 }
 
+CD8_cols <- c(pos_sigs_CD8, neg_sigs_CD8)
+mean_CD8 <- apply(CD8[,..CD8_cols], 2, mean)
+sd_CD8   <- apply(CD8[,..CD8_cols], 2, sd)
+stopifnot(all(names(mean_CD8) == names(sd_CD8)))
+
+scale_CD8 <- data.frame(signature = names(mean_CD8), mean = mean_CD8, sd = sd_CD8)
+
+CD4_cols <- c(pos_sigs_CD4, neg_sigs_CD4)
+mean_CD4 <- apply(CD4[,..CD4_cols], 2, mean)
+sd_CD4   <- apply(CD4[,..CD4_cols], 2, sd)
+stopifnot(all(names(mean_CD4) == names(sd_CD4)))
+
+scale_CD4 <- data.frame(signature = names(mean_CD4), mean = mean_CD4, sd = sd_CD4)
+
+fwrite(scale_CD8, "data/scale_CD8.tsv", sep = "\t")
+fwrite(scale_CD4, "data/scale_CD4.tsv", sep = "\t")
+
 res_cd8 <- classify_cells(CD8, "CD8", pos_sigs_CD8, neg_sigs_CD8)
 res_cd4 <- classify_cells(CD4, "CD4", pos_sigs_CD4, neg_sigs_CD4)
+
 
 CD8 <- res_cd8$df
 res_cd8$pos_cut
@@ -711,7 +730,6 @@ res_cd4$neg_cut
 
 table(CD8$cancer_reactive_per_cell, CD8$study_specific_CR_per_cell)
 table(CD4$cancer_reactive_per_cell, CD4$study_specific_CR_per_cell)
-
 ```
 
 
@@ -1049,9 +1067,6 @@ p4 + theme(legend.position = "none")
 
 ## save results
 ```{r}
-
-CD4[,Patient := paste(study, Patient, sep="_")]
-CD8[,Patient := paste(study, Patient, sep="_")]
 
 fwrite(CD4, "data/CD4_combined.tsv", sep = "\t")
 fwrite(CD8, "data/CD8_combined.tsv", sep = "\t")
