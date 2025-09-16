@@ -1,6 +1,5 @@
 # %%
-print("started")
-
+# Wang et al., 2024 study only have CD8+ T cells
 import os
 
 import gseapy as gp
@@ -9,6 +8,7 @@ import scanpy as sc
 import numpy as np
 import pickle
 from scipy.io import mmread
+
 # %%
 target_rd = 3000
 min_rd = 500
@@ -16,10 +16,12 @@ max_rd = 20000
 
 data_folder = "data_from_RDS"
 
-with open("signatures_CD8.pkl","rb") as f:
+with open("../data/signatures_CD8.pkl", "rb") as f:
     sigs_CD8 = pickle.load(f)
-del sigs_CD8['Lowery_neg_99g']
+
 print({k: len(v) for k, v in sigs_CD8.items()})
+
+del sigs_CD8['Lowery_neg_99g']
 
 # Read the matrix
 with open(os.path.join(data_folder,"rna_counts.mtx"), "r") as f:
@@ -30,7 +32,6 @@ rna_matrix = mmread(os.path.join(data_folder,"rna_counts.mtx")).T.tocsr()  # Tra
 print("read rna counts matrix")
 
 # %%
-
 # Read gene and cell names
 genes = pd.read_csv(os.path.join(data_folder,"genes_rna.txt"), header=None)[0].tolist()
 cells = pd.read_csv(os.path.join(data_folder,"cells_rna.txt"), header=None)[0].tolist()
@@ -40,8 +41,6 @@ adata = sc.AnnData(rna_matrix)
 adata.var_names = genes
 adata.obs_names = cells
 
-
-
 # Read the ADT file
 adt = pd.read_csv(os.path.join(data_folder,"adt_values.csv"), index_col=0)
 
@@ -49,20 +48,33 @@ adt = pd.read_csv(os.path.join(data_folder,"adt_values.csv"), index_col=0)
 print("Antibody tags found:")
 print(adt.index.tolist())
 
+#%%
+genes2use = pd.read_csv("../data/common_genes.txt", header=None)[0].tolist()
+print(f"Number of common genes: {len(genes2use)}")
+print(genes2use[:5])
+
+print(f"Original number of genes: {adata.n_vars}")
+adata = adata[:, adata.var_names.isin(genes2use)]
+print(f"Number of genes after filtering to common genes: {adata.n_vars}")
+
+
 # %%
 meta = pd.read_csv("data_from_RDS/cell_metadata.csv", index_col=0)
-
-#%%
+print("Metadata shape:", meta.shape)
+print("Metadata index matches adata.obs_names:", all(meta.index == adata.obs_names))
+print(meta.iloc[0:2, :5])
+print(meta.index.tolist()[:10])
+print("Metadata columns:", meta.columns.tolist())
 print(meta['timepoint'].value_counts())
 
 # %%
-
 adata.var_names_make_unique()
 adata.var["gene_name"] = adata.var_names
 
 sc.pp.calculate_qc_metrics(adata, inplace=True)
 
 # Check percentage of cells with counts < min_rd or > max_rd
+print(adata.obs['total_counts'].describe())
 low_count = (adata.obs['total_counts'] < min_rd).sum()
 high_count = (adata.obs['total_counts'] > max_rd).sum()
 total_cells = adata.shape[0]
@@ -109,16 +121,14 @@ def match_genes_in_sets(sigs_CD8, se2):
         gs[s1] = matched_genes
     return
 
-final_df = pd.DataFrame()
+final_df_CD8 = pd.DataFrame()
+
+
+# %% Calculate signatures for CD8+ T cells
 
 sets_ave = ["Hanada_pos_27g", "Oliveira_virus_26g", "Hanada_neg_5g"]
 # Identify the rest for ssGSEA
 ssgsea_sets = {k: v for k, v in sigs_CD8.items() if k not in sets_ave}
-# gseapy.ssgsea expects a DataFrame where rows = genes, columns = samples.
-# So let's invert adata back: adata.X => n_cells x n_genes
-# We need genes x cells. We'll build a small data frame:
-
-# %%
 
 all_cells = np.array(adata.obs.index)
 n_batches = 100
@@ -187,12 +197,7 @@ signature_df["CD8_ave_Hanada_neg_5g"]  = ave_Hanada_neg_5g
 signature_df["CD8_ave_Oliveira_virus_26g"] = ave_Oliveira_virus_26g
 
 df_combined = df_wide.join(signature_df, how="inner")
-final_df = pd.concat([final_df, df_combined], ignore_index=False)
+final_df_CD8 = pd.concat([final_df_CD8, df_combined], ignore_index=False)
 
-final_df.to_csv('output.csv',index = True)
+final_df_CD8.to_csv('output_CD8.csv',index = True)
 
-# %%
-
-for s1 in sigs_CD8.keys():
-    print(len(sigs_CD8[s1]), s1)
-# %%
