@@ -1,4 +1,4 @@
-# %%
+#%%
 # Wang et al., 2024 study only have CD8+ T cells
 import os
 
@@ -9,24 +9,32 @@ import numpy as np
 import pickle
 from scipy.io import mmread
 
-# %%
+
 target_rd = 3000
 min_rd = 500
 max_rd = 20000
 
-data_folder = "data_from_RDS"
+data_folder = "../WANG_2024/data_from_RDS"
 
 with open("../data/signatures_CD8.pkl", "rb") as f:
     sigs_CD8 = pickle.load(f)
+
 
 print({k: len(v) for k, v in sigs_CD8.items()})
 
 del sigs_CD8['Lowery_neg_99g']
 
+
 # Read the matrix
 with open(os.path.join(data_folder,"rna_counts.mtx"), "r") as f:
     for _ in range(10):
         print(f.readline().strip())
+    
+print("reading")
+size_gb = os.path.getsize(os.path.join(data_folder,"rna_counts.mtx"))/1e9
+print(size_gb, "GB")
+
+#%%
 rna_matrix = mmread(os.path.join(data_folder,"rna_counts.mtx")).T.tocsr()  # Transpose to cells × genes
 
 print("read rna counts matrix")
@@ -201,3 +209,4 @@ final_df_CD8 = pd.concat([final_df_CD8, df_combined], ignore_index=False)
 
 final_df_CD8.to_csv('output_CD8.csv',index = True)
 
+print("finished")
