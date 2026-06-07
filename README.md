@@ -27,7 +27,8 @@ First run ```zz0_get_common_gene_set.ipynb``` to get the common set of genes to 
 ## NN models for whether a T cell is cancer-associated or not 
 
 - **classify_cancer_reactive_T**
-  NN models were trained for predicting whether a T cell is cancer-associated or not based on gene experssion. For each cell, the output is a numerical score between 0 and 1. One model was trained for CD4 and one model was for CD8.
+  
+NN models were trained for predicting whether a T cell is cancer-associated or not based on gene experssion. For each cell, the output is a numerical score between 0 and 1. One model was trained for CD4 and one model was for CD8.
 
 ### Build the conda environment
 
