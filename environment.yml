@@ -1,4 +1,4 @@
-name: careTCR
+name: CAT
 channels:
   - conda-forge
   - bioconda
