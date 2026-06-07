@@ -1,7 +1,8 @@
 # CAT
 
-Cancer Associated TCR
+Cancer Associated T cells
 
+<!--
 # Output files of the pipelines:
 
 **cell_meta_data_CD4.csv, cell_meta_data_CD8.csv**: contains scores for each cell, basic cell information, whether a cell is cancer reactive or not, TCR (could have multiple) associated with the cell. These files can be multi-indexed if TCR info is available for each cell.
@@ -21,33 +22,35 @@ conda install -c conda-forge python-igraph leidenalg
 ```
 
 First run ```zz0_get_common_gene_set.ipynb``` to get the common set of genes to be used, and then run the codes within each study-specific folder. Typically to run ```process_all_data.py``` followed by ```process_output.ipynb```. Finally run ```zz1_prepare_data.Rmd``` and ```zz2_construct_training_data.Rmd``` in this folder. 
+-->
 
+## NN models for whether a T cell is cancer-associated or not 
 
-## To run on the Fred Hutch Cluster, first
-```
-grabnode
-```
-and select hardwares (some larger files it is better to use 32 CPUs and 512GB memory). Then enter the working directory:
-```
-cd /fh/working/sun_w/CAT
-```
-Load the modules:
-```
-ml purge 
-ml SciPy-bundle/2023.02-gfbf-2022b
-ml scenicplus/1.0.0-foss-2022b
-ml JupyterLab/4.0.3-GCCcore-12.2.0
-jupyter lab --ip=$(hostname) --port=$(fhfreeport) --no-browser
-```
-Copy the links, open in browser and work from there.
+- **classify_cancer_reactive_T**
+  NN models were trained for predicting whether a T cell is cancer-associated or not based on gene experssion. For each cell, the output is a numerical score between 0 and 1. One model was trained for CD4 and one model was for CD8.
 
-If any additional library is needed (for example scanpy), one can use this command to install into the user directory:
+### Build the conda environment
+
 ```
-pip3 install --user scanpy
-```
-or search Fred Hutch python modules in terminal:
-```
-module avail xxx
+conda env create -f environment.yml
+conda activate CAT
 ```
 
+### Make prediction on test data
 
+The test data should be T cells with gene expression count. The NN model for the corresponding cell type should be used. For example, for CD8 T cells, use the NN model trained for CD8 should be used. 
+
+To prepare the test data for making predictions on, these steps are needed:
+
+1. restrict test genes to a set of genes, which are the genes on which the model development data library-size normalize was run. For the genes that do not exist in the test data, sert zero columns.
+2. compute per-cell total_counts on the set of genes in point 1. 
+3. library-size normalize to target_sum = 3000, then log1p
+4. subset to the top-1000 DE genes used as model input, arranged in the same order as in model input
+
+and these steps are all included in an example tutorial for using the CD8 NN model to make predictions on independent test data:
+
+[step5_predict_on_Caushi_data_CD8.py](https://github.com/Sun-lab/CAT/blob/main/classify_cancer_reactive_T/step5_predict_on_Caushi_data_CD8.py)
+
+  
+
+  
