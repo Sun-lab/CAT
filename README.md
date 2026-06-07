@@ -39,7 +39,7 @@ conda activate CAT
 
 ### Make prediction on test data
 
-The test data should be T cells with gene expression count. The NN model for the corresponding cell type should be used. For example, for CD8 T cells, use the NN model trained for CD8 should be used. 
+The test data should be T cells with gene expression count. The NN model for the corresponding cell type should be used. For example, for CD8 T cells, the NN model trained for CD8 should be used. 
 
 To prepare the test data for making predictions on, these steps are needed:
 
