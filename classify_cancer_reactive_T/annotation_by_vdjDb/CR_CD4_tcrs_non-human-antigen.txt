@@ -1,0 +1,8 @@
+# Cancer-reactive CD4 T cells removed because BOTH TCR chains match
+# a non-human-antigen TCR in VDJdb (score >= 2).
+# total removed cells: 3; unique TCRs: 3
+# TRA/TRB_antigen = non-human antigen species matched by that chain in VDJdb.
+TRA_v_gene	TRA_cdr3	TRB_v_gene	TRB_cdr3	TRA_antigen	TRB_antigen	n_cells
+TRAV22	CAVSNDYKLSF	TRBV5-1	CASSLDGSNQPQHF	InfluenzaA	CMV	1
+TRAV27	CAGAGGGSNYKLTF	TRBV14	CASSQVDSYGYTF	CMV	CMV	1
+TRAV38-2/DV8	CAYDTGTASKLTF	TRBV7-2	CASSLVGETQYF	EBV	InfluenzaA	1
